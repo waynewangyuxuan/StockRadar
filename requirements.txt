@@ -6,12 +6,8 @@ pyspark>=3.3.0  # 可选，用于大规模数据处理
 # 配置管理
 pyyaml>=6.0.0
 
-# 日志和监控
-logging>=0.5.1.2
-
 # 数据存储
 pyarrow>=10.0.0  # Parquet 支持
-hive-python-client>=0.0.1  # Hive 支持
 
 # 开发工具
 pytest>=7.0.0  # 测试框架

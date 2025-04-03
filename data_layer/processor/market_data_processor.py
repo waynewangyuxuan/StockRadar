@@ -1,111 +1,81 @@
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Dict, Any
 import pandas as pd
 import numpy as np
 
 from .base import DataProcessorBase
-from monitoring.lineage.tracker import OperationType
+from monitoring.metrics.collector import MetricsCollector
+from monitoring.alerts.alert_manager import AlertManager
+from monitoring.lineage.tracker import LineageTracker
 
 class MarketDataProcessor(DataProcessorBase):
     """市场数据处理器"""
     
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.setup_processor_node(
-            processor_id="market_data_processor",
-            processor_name="Market Data Processor",
-            metadata={"type": "market_data", "version": "1.0"}
+    def __init__(
+        self,
+        metrics_collector: MetricsCollector = None,
+        alert_manager: AlertManager = None,
+        lineage_tracker: LineageTracker = None
+    ):
+        """初始化市场数据处理器"""
+        super().__init__(metrics_collector, alert_manager, lineage_tracker)
+        self._setup_lineage(
+            source_id="market_data_processor",
+            source_name="Market Data Processor",
+            metadata={"processor": "market_data"}
         )
     
-    def process(self, data: Dict[str, Any], **kwargs) -> Dict[str, Any]:
+    def process_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """处理市场数据"""
+        if data.empty:
+            return data
+            
+        # 记录处理开始时间
+        start_time = pd.Timestamp.now()
+        
         try:
-            start_time = datetime.now()
-            
-            # 转换为DataFrame
-            df = pd.DataFrame(data['data'])
-            
-            # 数据清洗和转换
-            df = self._clean_data(df)
-            
             # 计算技术指标
-            df = self._calculate_indicators(df)
+            processed_data = data.copy()
             
-            # 准备输出数据
-            output_data = {
-                'symbol': data['symbol'],
-                'data': df.to_dict('records'),
-                'metadata': {
-                    **data['metadata'],
-                    'processed_at': datetime.now().isoformat(),
-                    'added_features': ['returns', 'volatility', 'ma_20', 'ma_50']
-                }
-            }
+            # 计算日收益率
+            processed_data['daily_return'] = processed_data.groupby('symbol')['close'].pct_change()
             
-            # 记录处理指标
-            self._record_processing_metrics(start_time, data, output_data, "market_data")
+            # 计算移动平均线
+            processed_data['ma5'] = processed_data.groupby('symbol')['close'].rolling(window=5).mean().reset_index(0, drop=True)
+            processed_data['ma20'] = processed_data.groupby('symbol')['close'].rolling(window=20).mean().reset_index(0, drop=True)
+            
+            # 计算波动率
+            processed_data['volatility'] = processed_data.groupby('symbol')['daily_return'].rolling(window=20).std().reset_index(0, drop=True)
+            
+            # 计算交易量变化
+            processed_data['volume_change'] = processed_data.groupby('symbol')['volume'].pct_change()
+            
+            # 记录处理完成时间
+            end_time = pd.Timestamp.now()
+            processing_time = (end_time - start_time).total_seconds() * 1000
+            
+            # 记录性能指标
+            if self.metrics_collector:
+                self.metrics_collector.record_latency("market_data_processing", processing_time)
+                self.metrics_collector.record_data_volume("processed_market_data", len(processed_data))
             
             # 记录数据血缘
-            if data.get('source_node'):
+            if self.lineage_tracker:
                 self._record_lineage(
-                    data['source_node'],
-                    output_data,
-                    OperationType.TRANSFORM,
-                    {"transformation": "market_data_processing"}
+                    operation="process_market_data",
+                    input_data={
+                        "shape": data.shape,
+                        "columns": list(data.columns)
+                    },
+                    output_data=processed_data
                 )
             
-            return output_data
+            return processed_data
             
         except Exception as e:
-            self._handle_processing_error(e, "market_data", data)
-    
-    def _clean_data(self, df: pd.DataFrame) -> pd.DataFrame:
-        """清洗市场数据"""
-        # 删除重复行
-        df = df.drop_duplicates()
-        
-        # 处理缺失值
-        df['Volume'] = df['Volume'].fillna(0)
-        df = df.fillna(method='ffill')  # 用前一个值填充其他缺失值
-        
-        # 确保时间索引
-        if 'Date' in df.columns:
-            df['Date'] = pd.to_datetime(df['Date'])
-            df.set_index('Date', inplace=True)
-        
-        return df
-    
-    def _calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
-        """计算技术指标"""
-        # 计算日收益率
-        df['returns'] = df['Close'].pct_change()
-        
-        # 计算波动率 (20日滚动标准差)
-        df['volatility'] = df['returns'].rolling(window=20).std()
-        
-        # 计算移动平均线
-        df['ma_20'] = df['Close'].rolling(window=20).mean()
-        df['ma_50'] = df['Close'].rolling(window=50).mean()
-        
-        # 记录指标计算的质量
-        self._validate_indicators(df)
-        
-        return df
-    
-    def _validate_indicators(self, df: pd.DataFrame) -> None:
-        """验证计算的指标"""
-        # 检查是否有无限值
-        inf_check = np.isinf(df[['returns', 'volatility', 'ma_20', 'ma_50']]).any().any()
-        self.metrics_collector.record_data_quality(
-            "infinite_values_check",
-            success=not inf_check,
-            details={"has_infinite_values": inf_check}
-        )
-        
-        # 检查缺失值比例
-        na_ratio = df[['returns', 'volatility', 'ma_20', 'ma_50']].isna().mean()
-        self.metrics_collector.record_data_quality(
-            "missing_values_ratio",
-            success=na_ratio.max() < 0.1,  # 允许最多10%的缺失值
-            details={"missing_ratios": na_ratio.to_dict()}
-        ) 
+            if self.alert_manager:
+                self.alert_manager.error(
+                    source=self.__class__.__name__,
+                    message=f"处理市场数据时出错: {str(e)}",
+                    metadata={"error_type": e.__class__.__name__}
+                )
+            raise 
