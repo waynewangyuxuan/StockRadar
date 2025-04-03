@@ -1,0 +1,47 @@
+# StockRadar 配置文件模板
+
+# 数据配置
+data:
+  path: "data/market_data.csv"  # 数据文件路径
+  format: "csv"                 # 数据格式
+  start_date: "2023-01-01"     # 起始日期
+  end_date: "2023-12-31"       # 结束日期
+
+# 策略配置
+strategies:
+  - name: "momentum_strategy"   # 策略名称
+    module: "plugins.strategies.momentum"  # 策略模块路径
+    class: "MomentumStrategy"   # 策略类名
+    params:                     # 策略参数
+      lookback_period: 20       # 回看周期
+      threshold: 0.1           # 信号阈值
+    factors:                    # 策略使用的因子列表
+      - name: "returns"        # 因子名称
+        module: "plugins.factors.returns"  # 因子模块路径
+        class: "ReturnsFactor"  # 因子类名
+        params:                 # 因子参数
+          period: 1            # 计算周期
+      - name: "volatility"
+        module: "plugins.factors.volatility"
+        class: "VolatilityFactor"
+        params:
+          window: 20
+
+  - name: "mean_reversion_strategy"
+    module: "plugins.strategies.mean_reversion"
+    class: "MeanReversionStrategy"
+    params:
+      lookback_period: 60
+      threshold: 2.0
+    factors:
+      - name: "zscore"
+        module: "plugins.factors.zscore"
+        class: "ZScoreFactor"
+        params:
+          window: 60
+
+# 输出配置
+output:
+  path: "output"               # 输出目录
+  format: "csv"                # 输出格式
+  save_metadata: true         # 是否保存元数据 

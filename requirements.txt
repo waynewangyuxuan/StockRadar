@@ -1,0 +1,20 @@
+# 数据处理
+pandas>=1.5.0
+numpy>=1.21.0
+pyspark>=3.3.0  # 可选，用于大规模数据处理
+
+# 配置管理
+pyyaml>=6.0.0
+
+# 日志和监控
+logging>=0.5.1.2
+
+# 数据存储
+pyarrow>=10.0.0  # Parquet 支持
+hive-python-client>=0.0.1  # Hive 支持
+
+# 开发工具
+pytest>=7.0.0  # 测试框架
+black>=22.0.0  # 代码格式化
+isort>=5.10.0  # 导入排序
+mypy>=0.950  # 类型检查 
