@@ -1,113 +1,108 @@
+"""Base strategy class defining the basic interface for strategy execution"""
+
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional
 import pandas as pd
 import numpy as np
 from datetime import datetime
+import os
 
 class StrategyBase(ABC):
-    """策略基类，定义策略执行的基本接口"""
-    
     def __init__(self, name: str, params: Optional[Dict[str, Any]] = None):
-        """
-        初始化策略
+        """Initialize strategy
         
         Args:
-            name: 策略名称
-            params: 策略参数
+            name: Strategy name
+            params: Strategy parameters
         """
         self.name = name
         self.params = params or {}
-        self.factors: List[Any] = []  # 策略使用的因子列表
+        self.factors: List[Any] = []  # List of factors used by the strategy
         
     @abstractmethod
     def generate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
-        """
-        生成交易信号
+        """Generate trading signals
         
         Args:
-            data: 输入数据，包含因子值
+            data: Input data containing factor values
             
         Returns:
-            pd.DataFrame: 信号DataFrame，包含信号值和相关元数据
+            pd.DataFrame: Signal DataFrame containing signal values and related metadata
         """
         pass
     
     @abstractmethod
     def validate(self, data: pd.DataFrame) -> bool:
-        """
-        验证输入数据是否满足策略要求
+        """Validate if input data meets strategy requirements
         
         Args:
-            data: 输入数据
+            data: Input data
             
         Returns:
-            bool: 数据是否有效
+            bool: Whether the data is valid
         """
         pass
     
     def preprocess(self, data: pd.DataFrame) -> pd.DataFrame:
-        """
-        数据预处理
+        """Data preprocessing
         
         Args:
-            data: 输入数据
+            data: Input data
             
         Returns:
-            pd.DataFrame: 预处理后的数据
+            pd.DataFrame: Preprocessed data
         """
         return data
     
     def postprocess(self, signals: pd.DataFrame) -> pd.DataFrame:
-        """
-        信号后处理（如信号平滑、风险控制等）
+        """Signal post-processing
         
         Args:
-            signals: 原始信号
+            signals: Generated signals
             
         Returns:
-            pd.DataFrame: 处理后的信号
+            pd.DataFrame: Post-processed signals
         """
         return signals
     
     def add_factor(self, factor: Any) -> None:
-        """
-        添加因子到策略
+        """Add factor to strategy
         
         Args:
-            factor: 因子实例
+            factor: Factor instance
         """
         self.factors.append(factor)
     
-    def get_required_factors(self) -> List[str]:
-        """
-        获取策略所需的因子列表
+    def get_required_fields(self) -> List[str]:
+        """Get required data fields
         
         Returns:
-            List[str]: 所需因子名称列表
+            List[str]: List of required fields
         """
-        return [factor.name for factor in self.factors]
+        fields = []
+        for factor in self.factors:
+            fields.extend(factor.get_required_fields())
+        return list(set(fields))
     
     def get_strategy_info(self) -> Dict[str, Any]:
-        """
-        获取策略信息
+        """Get strategy information
         
         Returns:
-            Dict[str, Any]: 策略信息字典
+            Dict[str, Any]: Strategy information dictionary
         """
         return {
             'name': self.name,
             'params': self.params,
-            'required_factors': self.get_required_factors()
+            'factors': [f.get_factor_info() for f in self.factors]
         }
     
     def save_signals(self, signals: pd.DataFrame, output_path: str) -> None:
-        """
-        保存信号到文件
+        """Save signals to file
         
         Args:
-            signals: 信号DataFrame
-            output_path: 输出文件路径
+            signals: Signal DataFrame
+            output_path: Output file path
         """
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"{self.name}_{timestamp}.csv"
-        signals.to_csv(f"{output_path}/{filename}") 
+        os.makedirs(output_path, exist_ok=True)
+        file_path = os.path.join(output_path, f"{self.name}_signals.csv")
+        signals.to_csv(file_path, index=False) 

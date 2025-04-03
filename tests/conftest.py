@@ -9,49 +9,46 @@ from monitoring.lineage.tracker import LineageTracker
 
 @pytest.fixture
 def sample_market_data():
-    """生成用于测试的市场数据"""
-    dates = pd.date_range(start='2023-01-01', end='2023-12-31', freq='D')
-    symbols = ['AAPL', 'GOOGL', 'MSFT']
+    """Generate market data for testing"""
+    n = 100
+    dates = pd.date_range(start='2023-01-01', periods=n)
     
-    data = []
-    for symbol in symbols:
-        # 生成模拟数据
-        n = len(dates)
-        close_prices = np.random.normal(100, 10, n).cumsum()  # 随机游走
-        
-        for i, date in enumerate(dates):
-            data.append({
-                'symbol': symbol,
-                'date': date,
-                'open': close_prices[i] * (1 + np.random.normal(0, 0.01)),
-                'high': close_prices[i] * (1 + np.random.normal(0.01, 0.01)),
-                'low': close_prices[i] * (1 - np.random.normal(0.01, 0.01)),
-                'close': close_prices[i],
-                'volume': np.random.randint(1000000, 10000000)
-            })
+    # Generate simulated data
+    np.random.seed(42)
+    close_prices = np.random.normal(100, 10, n).cumsum()  # Random walk
+    data = pd.DataFrame({
+        'date': dates,
+        'symbol': 'AAPL',
+        'open': close_prices * (1 + np.random.normal(0, 0.02, n)),
+        'high': close_prices * (1 + np.random.normal(0.02, 0.02, n)),
+        'low': close_prices * (1 + np.random.normal(-0.02, 0.02, n)),
+        'close': close_prices,
+        'volume': np.random.randint(1000000, 5000000, n)
+    })
     
-    return pd.DataFrame(data)
+    return data
 
 @pytest.fixture
 def metrics_collector():
-    """创建指标收集器"""
+    """Create metrics collector"""
     return DefaultMetricsCollector()
 
 @pytest.fixture
 def alert_manager():
-    """创建告警管理器"""
+    """Create alert manager"""
     manager = AlertManager()
     manager.add_notifier(ConsoleAlertNotifier())
     return manager
 
 @pytest.fixture
 def lineage_tracker():
-    """创建血缘追踪器"""
+    """Create lineage tracker"""
     return LineageTracker()
 
 @pytest.fixture
 def date_range():
-    """创建测试用的日期范围"""
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=365)
-    return start_date, end_date 
+    """Create test date range"""
+    return (
+        datetime(2023, 1, 1),
+        datetime(2023, 12, 31)
+    ) 

@@ -1,134 +1,134 @@
+"""Strategy executor responsible for loading configurations, executing strategies, and saving results"""
+
+import os
+import logging
+import importlib
+from typing import Dict, Any, List
 import yaml
 import pandas as pd
-from typing import Dict, Any, List
-from pathlib import Path
-import importlib
-import logging
 from datetime import datetime
 
 from .strategy_base import StrategyBase
 from .factor_base import FactorBase
 
 class StrategyRunner:
-    """策略执行器，负责加载配置、执行策略和保存结果"""
-    
     def __init__(self, config_path: str):
-        """
-        初始化执行器
+        """Initialize executor
         
         Args:
-            config_path: 配置文件路径
+            config_path: Configuration file path
         """
         self.config_path = config_path
         self.config = self._load_config()
-        self.logger = self._setup_logger()
-        
+        self._setup_logger()
+        self.factors = self._load_factors()
+        self.strategies = self._load_strategies()
+    
     def _load_config(self) -> Dict[str, Any]:
-        """加载配置文件"""
-        with open(self.config_path, 'r', encoding='utf-8') as f:
+        """Load configuration file"""
+        with open(self.config_path, 'r') as f:
             return yaml.safe_load(f)
     
-    def _setup_logger(self) -> logging.Logger:
-        """设置日志器"""
-        logger = logging.getLogger('StrategyRunner')
+    def _setup_logger(self) -> None:
+        """Set up logger"""
+        logger = logging.getLogger('strategy_runner')
         logger.setLevel(logging.INFO)
         
-        # 创建控制台处理器
+        # Create console handler
         console_handler = logging.StreamHandler()
         console_handler.setLevel(logging.INFO)
         
-        # 创建文件处理器
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        file_handler = logging.FileHandler(f'logs/strategy_{timestamp}.log')
-        file_handler.setLevel(logging.INFO)
+        # Create file handler
+        log_dir = os.path.join('logs', 'strategy')
+        os.makedirs(log_dir, exist_ok=True)
+        file_handler = logging.FileHandler(
+            os.path.join(log_dir, 'strategy.log')
+        )
         
-        # 设置日志格式
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        # Set log format
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
         console_handler.setFormatter(formatter)
         file_handler.setFormatter(formatter)
         
         logger.addHandler(console_handler)
         logger.addHandler(file_handler)
-        
-        return logger
     
-    def _load_factor(self, factor_config: Dict[str, Any]) -> FactorBase:
-        """加载因子"""
-        module_path = factor_config['module']
-        class_name = factor_config['class']
+    def _load_factors(self) -> List[Any]:
+        """Load factors"""
+        factors = []
         
-        # 动态导入因子模块
-        module = importlib.import_module(module_path)
-        factor_class = getattr(module, class_name)
+        # Dynamically import factor modules
+        for factor_config in self.config.get('factors', []):
+            module = importlib.import_module(factor_config['module'])
+            
+            # Create factor instance
+            factor_class = getattr(module, factor_config['class'])
+            factor = factor_class(
+                name=factor_config['name'],
+                params=factor_config.get('params', {})
+            )
+            factors.append(factor)
         
-        # 创建因子实例
-        return factor_class(
-            name=factor_config['name'],
-            params=factor_config.get('params', {})
-        )
+        return factors
     
-    def _load_strategy(self, strategy_config: Dict[str, Any]) -> StrategyBase:
-        """加载策略"""
-        module_path = strategy_config['module']
-        class_name = strategy_config['class']
+    def _load_strategies(self) -> List[Any]:
+        """Load strategies"""
+        strategies = []
         
-        # 动态导入策略模块
-        module = importlib.import_module(module_path)
-        strategy_class = getattr(module, class_name)
+        # Dynamically import strategy modules
+        for strategy_config in self.config.get('strategies', []):
+            module = importlib.import_module(strategy_config['module'])
+            strategy_class = getattr(module, strategy_config['class'])
+            strategy = strategy_class(
+                name=strategy_config['name'],
+                factors=self.factors,
+                params=strategy_config.get('params', {})
+            )
+            strategies.append(strategy)
         
-        # 创建策略实例
-        strategy = strategy_class(
-            name=strategy_config['name'],
-            params=strategy_config.get('params', {})
-        )
-        
-        # 添加因子
-        for factor_config in strategy_config.get('factors', []):
-            factor = self._load_factor(factor_config)
-            strategy.add_factor(factor)
-        
-        return strategy
+        return strategies
     
     def _load_data(self, data_config: Dict[str, Any]) -> pd.DataFrame:
-        """加载数据"""
-        # TODO: 实现数据加载逻辑，支持多种数据源
-        data_path = data_config['path']
-        return pd.read_csv(data_path)
+        """Load data"""
+        # TODO: Implement data loading logic, support multiple data sources
+        pass
     
     def run(self) -> None:
-        """执行策略"""
+        """Execute strategy"""
         try:
-            self.logger.info("开始执行策略")
+            self.logger.info("Starting strategy execution")
             
-            # 加载数据
+            # Load data
             data = self._load_data(self.config['data'])
-            self.logger.info(f"加载数据完成，数据形状: {data.shape}")
+            self.logger.info(f"Data loading completed, shape: {data.shape}")
             
-            # 加载并执行策略
-            for strategy_config in self.config['strategies']:
-                strategy = self._load_strategy(strategy_config)
-                self.logger.info(f"开始执行策略: {strategy.name}")
+            # Load and execute strategies
+            for strategy in self.strategies:
+                self.logger.info(f"Starting strategy execution: {strategy.name}")
                 
-                # 数据预处理
-                data = strategy.preprocess(data)
+                # Data preprocessing
+                processed_data = strategy.preprocess(data)
                 
-                # 验证数据
-                if not strategy.validate(data):
-                    self.logger.error(f"策略 {strategy.name} 数据验证失败")
+                # Validate data
+                if not strategy.validate(processed_data):
+                    self.logger.error(f"Strategy {strategy.name} data validation failed")
                     continue
                 
-                # 生成信号
-                signals = strategy.generate_signals(data)
+                # Generate signals
+                signals = strategy.generate_signals(processed_data)
                 
-                # 信号后处理
+                # Signal post-processing
                 signals = strategy.postprocess(signals)
                 
-                # 保存信号
-                strategy.save_signals(signals, self.config['output']['path'])
-                self.logger.info(f"策略 {strategy.name} 执行完成")
+                # Save signals
+                self._save_signals(signals, strategy.name)
+                
+                self.logger.info(f"Strategy {strategy.name} execution completed")
             
-            self.logger.info("所有策略执行完成")
+            self.logger.info("All strategies execution completed")
             
         except Exception as e:
-            self.logger.error(f"策略执行出错: {str(e)}", exc_info=True)
+            self.logger.error(f"Strategy execution error: {str(e)}")
             raise 

@@ -4,15 +4,15 @@ import pandas as pd
 import numpy as np
 
 class FactorBase(ABC):
-    """因子基类，定义因子计算的基本接口"""
+    """Base factor class that defines the basic interface for factor calculation"""
     
     def __init__(self, name: str, params: Optional[Dict[str, Any]] = None):
         """
-        初始化因子
+        Initialize the factor
         
         Args:
-            name: 因子名称
-            params: 因子参数
+            name: Factor name
+            params: Factor parameters
         """
         self.name = name
         self.params = params or {}
@@ -20,68 +20,68 @@ class FactorBase(ABC):
     @abstractmethod
     def calculate(self, data: pd.DataFrame) -> pd.Series:
         """
-        计算因子值
+        Calculate factor values
         
         Args:
-            data: 输入数据，包含必要的行情数据
+            data: Input data containing necessary market data
             
         Returns:
-            pd.Series: 因子值序列
+            pd.Series: Factor value series
         """
         pass
     
     @abstractmethod
     def validate(self, data: pd.DataFrame) -> bool:
         """
-        验证输入数据是否满足因子计算要求
+        Validate if input data meets factor calculation requirements
         
         Args:
-            data: 输入数据
+            data: Input data
             
         Returns:
-            bool: 数据是否有效
+            bool: Whether the data is valid
         """
         pass
     
     def preprocess(self, data: pd.DataFrame) -> pd.DataFrame:
         """
-        数据预处理
+        Data preprocessing
         
         Args:
-            data: 输入数据
+            data: Input data
             
         Returns:
-            pd.DataFrame: 预处理后的数据
+            pd.DataFrame: Preprocessed data
         """
         return data
     
     def postprocess(self, factor: pd.Series) -> pd.Series:
         """
-        因子后处理（如标准化、去极值等）
+        Factor post-processing (e.g., standardization, outlier removal)
         
         Args:
-            factor: 原始因子值
+            factor: Original factor values
             
         Returns:
-            pd.Series: 处理后的因子值
+            pd.Series: Processed factor values
         """
         return factor
     
     def get_required_fields(self) -> list:
         """
-        获取因子计算所需的字段列表
+        Get the list of fields required for factor calculation
         
         Returns:
-            list: 所需字段列表
+            list: List of required fields
         """
         return []
     
     def get_factor_info(self) -> Dict[str, Any]:
         """
-        获取因子信息
+        Get factor information
         
         Returns:
-            Dict[str, Any]: 因子信息字典
+            Dict[str, Any]: Factor information dictionary
         """
         return {
             'name': self.name,

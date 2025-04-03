@@ -4,19 +4,19 @@ from alerts.alert_manager import AlertManager, AlertSeverity, ConsoleAlertNotifi
 from lineage.tracker import LineageTracker, DataNode, Operation, OperationType
 
 def demo_monitoring():
-    # 初始化监控组件
+    # Initialize monitoring components
     metrics_collector = DefaultMetricsCollector()
     alert_manager = AlertManager()
     alert_manager.add_notifier(ConsoleAlertNotifier())
     lineage_tracker = LineageTracker()
 
-    # 模拟数据处理流程
+    # Simulate data processing flow
     try:
-        # 1. 记录数据获取性能
+        # 1. Record data retrieval performance
         metrics_collector.record_latency("fetch_yfinance_data", 150.5)  # 150.5ms
         metrics_collector.record_data_volume("yfinance", 1000)
 
-        # 2. 创建数据血缘节点
+        # 2. Create data lineage nodes
         source_node = DataNode(
             id="yfinance_raw",
             name="YFinance Raw Data",
@@ -33,7 +33,7 @@ def demo_monitoring():
         lineage_tracker.add_node(source_node)
         lineage_tracker.add_node(processed_node)
 
-        # 3. 记录数据处理操作
+        # 3. Record data processing operation
         operation = Operation(
             type=OperationType.TRANSFORM,
             timestamp=datetime.now(),
@@ -43,7 +43,7 @@ def demo_monitoring():
         
         lineage_tracker.add_edge("yfinance_raw", "stock_daily", operation)
 
-        # 4. 触发质量检查告警
+        # 4. Trigger quality check alert
         metrics_collector.record_data_quality(
             "price_range_check",
             success=True,
@@ -51,7 +51,7 @@ def demo_monitoring():
         )
 
     except Exception as e:
-        # 5. 触发错误告警
+        # 5. Trigger error alert
         alert_manager.trigger_alert(
             title="Data Processing Failed",
             message=str(e),
@@ -60,12 +60,12 @@ def demo_monitoring():
             metadata={"step": "transform", "input_records": 1000}
         )
 
-    # 打印收集的指标
+    # Print collected metrics
     print("\nCollected Metrics:")
     for metric in metrics_collector.get_metrics():
         print(f"{metric.name}: {metric.value} ({metric.labels})")
 
-    # 打印数据血缘图
+    # Print data lineage graph
     print("\nData Lineage:")
     graph = lineage_tracker.export_graph()
     for edge in graph["edges"]:

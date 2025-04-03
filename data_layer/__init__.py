@@ -1,6 +1,4 @@
-"""
-数据层模块，提供数据获取、处理和存储功能
-"""
+"""Data layer module providing data retrieval, processing, and storage functionality"""
 
 from data_layer.fetcher.base import DataFetcherBase
 from data_layer.fetcher.yfinance_provider import YFinanceProvider

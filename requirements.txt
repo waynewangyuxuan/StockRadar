@@ -1,16 +1,16 @@
-# 数据处理
+# Data Processing
 pandas>=1.5.0
 numpy>=1.21.0
-pyspark>=3.3.0  # 可选，用于大规模数据处理
+pyspark>=3.3.0  # Optional, for large-scale data processing
 
-# 配置管理
+# Configuration Management
 pyyaml>=6.0.0
 
-# 数据存储
-pyarrow>=10.0.0  # Parquet 支持
+# Data Storage
+pyarrow>=10.0.0  # Parquet support
 
-# 开发工具
-pytest>=7.0.0  # 测试框架
-black>=22.0.0  # 代码格式化
-isort>=5.10.0  # 导入排序
-mypy>=0.950  # 类型检查 
+# Development Tools
+pytest>=7.0.0  # Testing framework
+black>=22.0.0  # Code formatting
+isort>=5.10.0  # Import sorting
+mypy>=0.950  # Type checking 

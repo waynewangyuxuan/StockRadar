@@ -1,6 +1,4 @@
-"""
-监控模块，提供指标收集、告警和数据血缘追踪功能
-"""
+"""Monitoring module providing metrics collection, alerting, and data lineage tracking functionality"""
 
 from monitoring.metrics.collector import MetricsCollector, DefaultMetricsCollector
 from monitoring.alerts.alert_manager import AlertManager, AlertSeverity, AlertNotifier, ConsoleAlertNotifier

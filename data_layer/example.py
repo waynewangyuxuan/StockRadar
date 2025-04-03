@@ -1,82 +1,79 @@
 from datetime import datetime, timedelta
+from typing import Dict, Any
+
 from monitoring.metrics.collector import DefaultMetricsCollector
 from monitoring.alerts.alert_manager import AlertManager, ConsoleAlertNotifier
 from monitoring.lineage.tracker import LineageTracker
 
-from fetcher.yfinance_provider import YFinanceProvider
-from processor.market_data_processor import MarketDataProcessor
-
-def main():
-    # 初始化监控组件
+def demo_data_layer():
+    # Initialize monitoring components
     metrics_collector = DefaultMetricsCollector()
     alert_manager = AlertManager()
     alert_manager.add_notifier(ConsoleAlertNotifier())
     lineage_tracker = LineageTracker()
-    
-    # 初始化数据提供者和处理器
-    data_provider = YFinanceProvider(
+
+    # Initialize data providers and processors
+    try:
+        from data_layer.fetcher.yfinance_fetcher import YFinanceFetcher
+        from data_layer.processor.stock_processor import StockDataProcessor
+    except ImportError:
+        print("Please install required packages: pip install yfinance pandas")
+        return
+
+    fetcher = YFinanceFetcher(
         metrics_collector=metrics_collector,
         alert_manager=alert_manager,
         lineage_tracker=lineage_tracker
     )
-    
-    data_processor = MarketDataProcessor(
-        metrics_collector=metrics_collector,
-        alert_manager=alert_manager,
-        lineage_tracker=lineage_tracker
-    )
+    processor = StockDataProcessor()
+
+    # Get historical data
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=30)
+    symbols = ["AAPL", "GOOGL", "MSFT"]  # Test multiple stocks
     
     try:
-        # 获取历史数据
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=365)
-        
-        symbols = ["AAPL", "GOOGL", "MSFT"]  # 测试多个股票
-        
-        print("\nFetching historical data...")
-        historical_data = data_provider.get_historical_data(
+        historical_data = fetcher.get_historical_data(
             symbols=symbols,
             start_date=start_date,
             end_date=end_date,
-            fields=['open', 'high', 'low', 'close', 'volume']
+            fields=['date', 'open', 'high', 'low', 'close', 'volume']
         )
         
-        print("\nFetching latest data...")
-        latest_data = data_provider.get_latest_data(
-            symbols=symbols
+        latest_data = fetcher.get_latest_data(
+            symbols=symbols,
+            fields=['date', 'open', 'high', 'low', 'close', 'volume']
         )
-        
-        # 添加源节点信息用于血缘追踪
-        historical_data['source_node'] = data_provider.source_node
-        
-        # 处理历史数据
-        processed_data = data_processor.process(historical_data)
-        
-        # 打印处理结果摘要
-        print("\nProcessed Data Summary:")
-        print(f"Symbols: {processed_data['symbols']}")
-        print(f"Time Range: {processed_data['metadata']['start_date']} to {processed_data['metadata']['end_date']}")
-        print(f"Added Features: {processed_data['metadata']['added_features']}")
-        print(f"Total Records: {len(processed_data['data'])}")
-        
-        # 打印最新数据摘要
-        print("\nLatest Data Summary:")
-        for record in latest_data['data']:
-            print(f"Symbol: {record['symbol']}, Close: {record['close']}, Date: {record['date']}")
-        
-        # 打印监控指标
-        print("\nMetrics Summary:")
+
+        # Add source node information for lineage tracking
+        fetcher.set_lineage("yfinance", "Yahoo Finance API")
+
+        # Process historical data
+        processed_data = processor.process(historical_data['data'])
+
+        # Print processing result summary
+        print("\nHistorical Data Summary:")
+        for symbol in processed_data:
+            print(f"{symbol}: {len(processed_data[symbol])} records")
+
+        # Print latest data summary
+        print("\nLatest Data:")
+        for symbol in latest_data['data']:
+            print(f"{symbol}: {latest_data['data'][symbol].iloc[-1].to_dict()}")
+
+        # Print monitoring metrics
+        print("\nMetrics:")
         for metric in metrics_collector.get_metrics():
-            print(f"{metric.name}: {metric.value} ({metric.labels})")
-        
-        # 打印数据血缘
+            print(f"{metric.name}: {metric.value}")
+
+        # Print data lineage
         print("\nData Lineage:")
         graph = lineage_tracker.export_graph()
-        for edge in graph["edges"]:
-            print(f"{edge.source.name} -> {edge.target.name} [{edge.operation.type.value}]")
-            
+        for edge in graph['edges']:
+            print(f"{edge[0]} -> {edge[1]}")
+
     except Exception as e:
         print(f"Error: {str(e)}")
 
 if __name__ == "__main__":
-    main() 
+    demo_data_layer() 

@@ -1,5 +1,5 @@
 """
-数据获取模块，提供各种数据源的统一接口
+Data fetching module providing unified interface for various data sources
 """
 
 from data_layer.fetcher.base import DataFetcherBase

@@ -1,5 +1,5 @@
 """
-告警模块，提供告警管理和通知功能
+Alert module providing alert management and notification functionality
 """
 
 from monitoring.alerts.alert_manager import AlertManager, AlertSeverity, AlertNotifier, ConsoleAlertNotifier

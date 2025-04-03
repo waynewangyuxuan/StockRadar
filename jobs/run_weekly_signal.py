@@ -1,69 +1,65 @@
 import argparse
-from pathlib import Path
+import os
 import sys
 import logging
 from datetime import datetime
 
-# 添加项目根目录到 Python 路径
-project_root = Path(__file__).parent.parent
-sys.path.append(str(project_root))
+# Add project root directory to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.runner import StrategyRunner
+from strategy.signal_generator import SignalGenerator
+from config.config_loader import ConfigLoader
 
-def setup_logger():
-    """设置日志器"""
-    logger = logging.getLogger('WeeklySignal')
+def setup_logger(log_file=None):
+    """Configure logger"""
+    logger = logging.getLogger('weekly_signal')
     logger.setLevel(logging.INFO)
     
-    # 创建控制台处理器
+    # Create console handler
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
     
-    # 创建文件处理器
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    log_dir = project_root / 'logs'
-    log_dir.mkdir(exist_ok=True)
-    file_handler = logging.FileHandler(log_dir / f'weekly_signal_{timestamp}.log')
-    file_handler.setLevel(logging.INFO)
+    # Create file handler
+    if log_file:
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging.INFO)
+        logger.addHandler(file_handler)
     
-    # 设置日志格式
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    # Set log format
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
     console_handler.setFormatter(formatter)
-    file_handler.setFormatter(formatter)
+    if log_file:
+        file_handler.setFormatter(formatter)
     
     logger.addHandler(console_handler)
-    logger.addHandler(file_handler)
-    
     return logger
 
 def main():
-    """主函数"""
-    # 解析命令行参数
-    parser = argparse.ArgumentParser(description='运行每周信号生成任务')
-    parser.add_argument('--config', type=str, default='configs/template.yaml',
-                      help='配置文件路径')
-    parser.add_argument('--date', type=str, default=None,
-                      help='信号生成日期 (YYYY-MM-DD)')
+    """Main function"""
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Run weekly signal generation task')
+    parser.add_argument('--config', required=True,
+                      help='Configuration file path')
+    parser.add_argument('--date', required=True,
+                      help='Signal generation date (YYYY-MM-DD)')
     args = parser.parse_args()
     
-    # 设置日志
+    # Setup logging
     logger = setup_logger()
-    logger.info("开始执行每周信号生成任务")
+    logger.info("Starting weekly signal generation task")
     
-    try:
-        # 创建输出目录
-        output_dir = project_root / 'output'
-        output_dir.mkdir(exist_ok=True)
-        
-        # 运行策略
-        runner = StrategyRunner(args.config)
-        runner.run()
-        
-        logger.info("每周信号生成任务执行完成")
-        
-    except Exception as e:
-        logger.error(f"任务执行出错: {str(e)}", exc_info=True)
-        sys.exit(1)
+    # Create output directory
+    output_dir = os.path.join('output', 'signals', args.date)
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Run strategy
+    config = ConfigLoader.load(args.config)
+    generator = SignalGenerator(config)
+    generator.generate_signals(args.date, output_dir)
+    
+    logger.info("Weekly signal generation task completed")
 
 if __name__ == '__main__':
     main() 

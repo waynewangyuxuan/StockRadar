@@ -1,6 +1,4 @@
-"""
-数据血缘模块，提供数据流向和处理过程追踪功能
-"""
+"""Data lineage module providing data flow and processing tracking functionality"""
 
 from monitoring.lineage.tracker import LineageTracker, DataNode, Operation, OperationType
 

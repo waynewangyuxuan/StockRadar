@@ -3,139 +3,144 @@ from typing import Any, Dict, List, Optional, Union
 import pandas as pd
 import yfinance as yf
 
-from .base import DataFetcherBase
+from data_layer.fetcher.base import DataFetcherBase
 from monitoring.alerts.alert_manager import AlertSeverity
 
 class YFinanceProvider(DataFetcherBase):
-    """YFinance数据提供者"""
+    """YFinance data provider"""
     
     def __init__(self, metrics_collector=None, alert_manager=None, lineage_tracker=None):
-        """初始化YFinance数据提供者"""
+        """Initialize YFinance data provider"""
         super().__init__(metrics_collector, alert_manager, lineage_tracker)
         self._setup_lineage(
             source_id="yfinance",
             source_name="YFinance API",
             metadata={
-                "provider": "yfinance",
-                "description": "YFinance API数据源"
+                "provider": "Yahoo Finance",
+                "description": "YFinance API data source"
             }
         )
     
     def get_historical_data(
         self,
         symbols: Union[str, List[str]],
-        start_date: datetime,
-        end_date: datetime,
+        start_date: Union[str, datetime],
+        end_date: Union[str, datetime],
         fields: List[str] = None
     ) -> Dict[str, Any]:
-        """获取历史数据"""
-        # 验证日期
-        self.validate_dates(start_date, end_date)
-
-        # 处理单个股票代码的情况
+        """Get historical data"""
+        # Validate dates
+        start_date, end_date = self.validate_dates(start_date, end_date)
+        
+        # Handle single symbol case
         if isinstance(symbols, str):
             symbols = [symbols]
-
-        # 验证股票代码
-        valid_symbols = self.validate_symbols(symbols)
-        if not valid_symbols:
-            return {
-                'data': pd.DataFrame(columns=['symbol', 'date', 'open', 'high', 'low', 'close', 'volume']),
-                'symbols': []
-            }
-
-        # 获取数据
+        
+        # Validate symbols
+        symbols = self.validate_symbols(symbols)
+        if not symbols:
+            raise ValueError("No valid symbols provided")
+        
         all_data = []
-        for symbol in valid_symbols:
+        
+        # Get data
+        for symbol in symbols:
             try:
                 ticker = yf.Ticker(symbol)
-                data = ticker.history(start=start_date, end=end_date)
+                data = ticker.history(
+                    start=start_date,
+                    end=end_date,
+                    interval="1d"
+                )
+                
                 if not data.empty:
                     data = data.reset_index()
                     data['symbol'] = symbol
                     all_data.append(data)
+                
             except Exception as e:
-                self._log_warning(f"获取 {symbol} 的历史数据时出错: {str(e)}")
-
+                self._log_warning(f"Error getting historical data for {symbol}: {str(e)}")
+                continue
+        
         if not all_data:
-            return {
-                'data': pd.DataFrame(columns=['symbol', 'date', 'open', 'high', 'low', 'close', 'volume']),
-                'symbols': []
-            }
-
-        # 合并数据
-        result_data = pd.concat(all_data, ignore_index=True)
-        result_data = result_data.rename(columns={
-            'Date': 'date',
-            'Open': 'open',
-            'High': 'high',
-            'Low': 'low',
-            'Close': 'close',
-            'Volume': 'volume'
-        })
-
-        # 过滤字段
+            raise ValueError("Failed to fetch data for all symbols")
+        
+        # Merge data
+        result = pd.concat(all_data, ignore_index=True)
+        result = self.normalize_data(result)
+        
+        # Filter fields
         if fields:
-            result_data = result_data[['symbol', 'date'] + [f for f in fields if f in result_data.columns]]
-        else:
-            result_data = result_data[['symbol', 'date', 'open', 'high', 'low', 'close', 'volume']]
-
-        # 记录血缘关系
-        if self.lineage_tracker:
-            self._record_lineage(
-                operation="get_historical_data",
-                input_data={
-                    "symbols": valid_symbols,
-                    "start_date": start_date.strftime("%Y-%m-%d"),
-                    "end_date": end_date.strftime("%Y-%m-%d"),
-                    "fields": fields
-                },
-                output_data=result_data
-            )
-
+            available_fields = set(result.columns) - {'symbol', 'date'}
+            valid_fields = [f for f in fields if f in available_fields]
+            result = result[['symbol', 'date'] + valid_fields]
+        
+        # Record lineage
+        self._record_lineage(
+            operation="fetch_historical",
+            input_data={
+                "symbols": symbols,
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+                "fields": fields
+            },
+            output_data=result
+        )
+        
         return {
-            'data': result_data,
-            'symbols': valid_symbols
+            'data': result,
+            'metadata': {
+                'symbols': symbols,
+                'start_date': start_date,
+                'end_date': end_date,
+                'fields': list(result.columns)
+            }
         }
     
-    def get_latest_data(
-        self,
-        symbols: Union[str, List[str]],
-        fields: List[str] = None
-    ) -> Dict[str, Any]:
-        """获取最新数据"""
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=1)
-
-        result = self.get_historical_data(
-            symbols=symbols,
-            start_date=start_date,
-            end_date=end_date,
-            fields=fields
-        )
-
-        if result['data'].empty:
-            return {
-                'data': pd.DataFrame(columns=['symbol', 'date', 'open', 'high', 'low', 'close', 'volume']),
-                'symbols': []
-            }
-
-        # 获取每个股票的最新数据
-        latest_data = result['data'].sort_values('date').groupby('symbol').last().reset_index()
-
-        # 过滤字段
-        if fields:
-            latest_data = latest_data[['symbol', 'date'] + [f for f in fields if f in latest_data.columns]]
-        else:
-            latest_data = latest_data[['symbol', 'date', 'open', 'high', 'low', 'close', 'volume']]
-
+    def get_latest_data(self, symbols: Union[str, List[str]], fields: List[str] = None) -> Dict[str, Any]:
+        """Get latest data"""
+        if isinstance(symbols, str):
+            symbols = [symbols]
+        
+        symbols = self.validate_symbols(symbols)
+        if not symbols:
+            raise ValueError("No valid symbols provided")
+        
+        latest_data = {}
+        for symbol in symbols:
+            try:
+                ticker = yf.Ticker(symbol)
+                data = ticker.history(period="1d")
+                
+                if not data.empty:
+                    data = data.reset_index()
+                    data['symbol'] = symbol
+                    
+                    if fields:
+                        available_fields = set(data.columns) - {'symbol', 'date'}
+                        valid_fields = [f for f in fields if f in available_fields]
+                        data = data[['symbol', 'date'] + valid_fields]
+                    
+                    latest_data[symbol] = data.iloc[-1]
+                
+            except Exception as e:
+                self._log_warning(f"Error getting latest data for {symbol}: {str(e)}")
+                continue
+        
+        if not latest_data:
+            raise ValueError("Failed to fetch latest data for all symbols")
+        
         return {
             'data': latest_data,
-            'symbols': result['symbols']
+            'metadata': {
+                'symbols': symbols,
+                'timestamp': datetime.now(),
+                'fields': fields
+            }
         }
     
     def validate_symbols(self, symbols: List[str]) -> List[str]:
-        """验证股票代码"""
+        """Validate symbols"""
         if not symbols:
             raise ValueError("No symbols provided")
         
@@ -158,7 +163,7 @@ class YFinanceProvider(DataFetcherBase):
         return valid_symbols
     
     def _validate_market_data(self, data: Dict[str, Any]) -> None:
-        """验证市场数据的质量"""
+        """Validate market data quality"""
         if not data.get('data'):
             if self.alert_manager:
                 self.alert_manager.trigger_alert(
@@ -170,14 +175,14 @@ class YFinanceProvider(DataFetcherBase):
                 )
             return
             
-        # 检查数据点数量
+        # Check data point count
         self.metrics_collector.record_data_quality(
             "market_data_volume",
             success=len(data['data']) > 0,
             details={"record_count": len(data['data'])}
         )
         
-        # 检查必要字段
+        # Check required fields
         required_fields = {'open', 'high', 'low', 'close', 'volume'}
         df = pd.DataFrame(data['data'])
         actual_fields = set(df.columns)

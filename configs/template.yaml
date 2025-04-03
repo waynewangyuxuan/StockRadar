@@ -1,26 +1,26 @@
-# StockRadar 配置文件模板
+# StockRadar Configuration Template
 
-# 数据配置
+# Data Configuration
 data:
-  path: "data/market_data.csv"  # 数据文件路径
-  format: "csv"                 # 数据格式
-  start_date: "2023-01-01"     # 起始日期
-  end_date: "2023-12-31"       # 结束日期
+  path: "data/market_data.csv"  # Data file path
+  format: "csv"                 # Data format
+  start_date: "2023-01-01"     # Start date
+  end_date: "2023-12-31"       # End date
 
-# 策略配置
+# Strategy Configuration
 strategies:
-  - name: "momentum_strategy"   # 策略名称
-    module: "plugins.strategies.momentum"  # 策略模块路径
-    class: "MomentumStrategy"   # 策略类名
-    params:                     # 策略参数
-      lookback_period: 20       # 回看周期
-      threshold: 0.1           # 信号阈值
-    factors:                    # 策略使用的因子列表
-      - name: "returns"        # 因子名称
-        module: "plugins.factors.returns"  # 因子模块路径
-        class: "ReturnsFactor"  # 因子类名
-        params:                 # 因子参数
-          period: 1            # 计算周期
+  - name: "momentum_strategy"   # Strategy name
+    module: "plugins.strategies.momentum"  # Strategy module path
+    class: "MomentumStrategy"   # Strategy class name
+    params:
+      lookback_period: 20
+      threshold: 0.05
+    factors:
+      - name: "returns"
+        module: "plugins.factors.returns"
+        class: "ReturnsFactor"
+        params:
+          period: 1
       - name: "volatility"
         module: "plugins.factors.volatility"
         class: "VolatilityFactor"
@@ -40,8 +40,20 @@ strategies:
         params:
           window: 60
 
-# 输出配置
+# Output Configuration
 output:
-  path: "output"               # 输出目录
-  format: "csv"                # 输出格式
-  save_metadata: true         # 是否保存元数据 
+  path: "output"
+  format: "csv"
+  save_metadata: true
+
+# Monitoring Configuration
+monitoring:
+  metrics:
+    enabled: true
+    collection_interval: 60  # seconds
+  alerts:
+    enabled: true
+    log_level: "WARNING"
+  lineage:
+    enabled: true
+    tracking_level: "detailed" 

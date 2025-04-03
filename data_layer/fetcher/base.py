@@ -9,73 +9,105 @@ from monitoring.alerts.alert_manager import AlertManager, AlertSeverity
 from monitoring.lineage.tracker import LineageTracker, DataNode, Operation, OperationType
 
 class DataFetcherBase(ABC):
-    """数据获取基类"""
+    """Base class for data fetching"""
     
-    def __init__(self, metrics_collector=None, alert_manager=None, lineage_tracker=None):
-        """初始化数据获取基类"""
+    def __init__(
+        self,
+        metrics_collector: MetricsCollector,
+        alert_manager: AlertManager,
+        lineage_tracker: LineageTracker
+    ):
+        """Initialize data fetcher base class"""
         self.metrics_collector = metrics_collector
         self.alert_manager = alert_manager
         self.lineage_tracker = lineage_tracker
         self.source_node = None
 
-    def _setup_lineage(self, source_id: str, source_name: str, metadata: Dict[str, Any] = None):
-        """设置数据血缘"""
-        if self.lineage_tracker:
-            self.source_node = self.lineage_tracker.create_source_node(
-                source_id=source_id,
-                source_name=source_name,
-                metadata=metadata
-            )
+    def set_lineage(self, source_id: str, source_name: str) -> None:
+        """Set data lineage"""
+        self.source_node = self.lineage_tracker.create_source_node(
+            source_id=source_id,
+            source_name=source_name,
+            metadata={
+                "fetcher": self.__class__.__name__,
+                "timestamp": datetime.now().isoformat()
+            }
+        )
 
-    def _record_lineage(self, operation: str, input_data: Dict[str, Any], output_data: pd.DataFrame):
-        """记录数据血缘"""
-        if self.lineage_tracker and self.source_node:
-            self.lineage_tracker.record_operation(
-                source_node=self.source_node,
-                operation=operation,
-                input_data=input_data,
-                output_data=output_data
-            )
+    def record_lineage(self, operation: str, output_data: pd.DataFrame) -> None:
+        """Record data lineage"""
+        self.lineage_tracker.record_operation(
+            source_node=self.source_node,
+            operation=operation,
+            input_data={},
+            output_data=output_data
+        )
 
-    def _log_warning(self, message: str):
-        """记录警告日志"""
-        if self.alert_manager:
-            self.alert_manager.warning(
-                source=self.__class__.__name__,
-                message=message
-            )
+    def log_warning(self, message: str, metadata: Dict[str, Any] = None) -> None:
+        """Record warning log"""
+        self.alert_manager.warning(
+            title="Data Fetching Warning",
+            message=message,
+            source=self.__class__.__name__,
+            metadata=metadata
+        )
 
-    def _handle_fetch_error(self, error: Exception, source: str):
-        """处理获取数据错误"""
-        if self.alert_manager:
-            self.alert_manager.error(
-                source=self.__class__.__name__,
-                message=str(error),
-                metadata={"error_type": error.__class__.__name__}
-            )
+    def handle_error(self, error: Exception, context: Dict[str, Any] = None) -> None:
+        """Handle data fetching error"""
+        self.alert_manager.error(
+            title="Data Fetching Error",
+            message=str(error),
+            source=self.__class__.__name__,
+            metadata=context
+        )
         raise error
+
+    def standardize_format(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Standardize data format"""
+        # Ensure required fields exist
+        required_fields = ['date', 'open', 'high', 'low', 'close', 'volume']
+        missing_fields = [field for field in required_fields if field not in df.columns]
+        if missing_fields:
+            raise ValueError(f"Data missing required fields: {missing_fields}")
+        
+        # Standardize date format
+        df['date'] = pd.to_datetime(df['date'])
+        
+        # Ensure numeric types are correct
+        numeric_fields = ['open', 'high', 'low', 'close', 'volume']
+        for field in numeric_fields:
+            df[field] = pd.to_numeric(df[field], errors='coerce')
+        
+        return df
+
+    def validate_date_format(self, date_str: str) -> datetime:
+        """Validate and standardize date format"""
+        try:
+            return pd.to_datetime(date_str)
+        except Exception as e:
+            raise ValueError(f"Invalid date format: {date_str}") from e
 
     def normalize_data(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        标准化数据格式
+        Standardize data format
 
         Args:
-            df: 原始数据DataFrame
+            df: Original DataFrame
 
         Returns:
-            pd.DataFrame: 标准化后的数据
+            pd.DataFrame: Standardized data
         """
-        # 确保必要字段存在
+        # Ensure required fields exist
         required_fields = ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume']
         missing_fields = [field for field in required_fields if field not in df.columns]
         if missing_fields:
-            raise ValueError(f"数据缺少必要字段: {missing_fields}")
+            raise ValueError(f"Missing required fields: {missing_fields}")
         
-        # 标准化日期格式
+        # Standardize date format
         if not pd.api.types.is_datetime64_any_dtype(df['date']):
             df['date'] = pd.to_datetime(df['date'])
         
-        # 确保数值类型正确
+        # Ensure numeric types are correct
         numeric_fields = ['open', 'high', 'low', 'close', 'volume']
         for field in numeric_fields:
             df[field] = pd.to_numeric(df[field], errors='coerce').astype(np.float64)
@@ -85,14 +117,14 @@ class DataFetcherBase(ABC):
     def validate_dates(self, start_date: Union[str, datetime], 
                       end_date: Union[str, datetime]) -> tuple:
         """
-        验证并标准化日期格式
+        Validate and standardize date format
 
         Args:
-            start_date: 起始日期
-            end_date: 结束日期
+            start_date: Start date
+            end_date: End date
 
         Returns:
-            tuple: (datetime, datetime) 标准化后的起止日期
+            tuple: (datetime, datetime) Standardized start and end dates
         """
         if isinstance(start_date, str):
             start_date = pd.to_datetime(start_date)
@@ -100,16 +132,16 @@ class DataFetcherBase(ABC):
             end_date = pd.to_datetime(end_date)
             
         if start_date > end_date:
-            raise ValueError("起始日期不能晚于结束日期")
+            raise ValueError("Start date cannot be later than end date")
             
         return start_date, end_date
 
     def _record_fetch_metrics(self, start_time: datetime, data: Dict[str, Any], source: str) -> None:
-        """记录数据获取相关的指标"""
+        """Record metrics related to data fetching"""
         duration = (datetime.now() - start_time).total_seconds() * 1000
         self.metrics_collector.record_latency(f"fetch_{source}", duration)
         
-        # 记录数据量
+        # Record data volume
         if isinstance(data.get('data'), (list, tuple)):
             self.metrics_collector.record_data_volume(source, len(data['data']))
             
@@ -121,7 +153,7 @@ class DataFetcherBase(ABC):
         end_date: Union[str, datetime],
         fields: List[str] = None
     ) -> Dict[str, Any]:
-        """获取历史数据"""
+        """Get historical data"""
         pass
 
     @abstractmethod
@@ -130,14 +162,14 @@ class DataFetcherBase(ABC):
         symbols: Union[str, List[str]],
         fields: List[str] = None
     ) -> Dict[str, Any]:
-        """获取最新数据"""
+        """Get latest data"""
         pass
 
     @abstractmethod
     def validate_symbols(self, symbols: List[str]) -> List[str]:
-        """验证股票代码"""
+        """Validate stock symbols"""
         pass
 
     def validate_response(self, data: Dict[str, Any]) -> bool:
-        """验证响应数据的基本结构"""
-        return True  # 子类可以重写此方法实现具体的验证逻辑 
+        """Validate response data structure"""
+        return True  # Subclasses can override this method to implement specific validation logic 

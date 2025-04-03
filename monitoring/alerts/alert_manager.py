@@ -5,7 +5,7 @@ from enum import Enum
 from typing import Dict, Any, List, Optional
 
 class AlertSeverity(Enum):
-    """告警严重程度"""
+    """Alert severity levels"""
     INFO = "INFO"
     WARNING = "WARNING"
     ERROR = "ERROR"
@@ -13,110 +13,141 @@ class AlertSeverity(Enum):
 
 @dataclass
 class Alert:
-    """告警信息"""
+    """Alert information"""
     title: str
     message: str
     severity: AlertSeverity
-    timestamp: datetime
     source: str
+    timestamp: datetime
     metadata: Dict[str, Any]
-    
+
 class AlertNotifier(ABC):
-    """告警通知接口"""
+    """Alert notification interface"""
     
     @abstractmethod
-    def send_alert(self, alert: Alert) -> bool:
-        """发送告警"""
+    def notify(self, alert: Alert) -> None:
+        """Send alert"""
         pass
 
 class ConsoleAlertNotifier(AlertNotifier):
-    """控制台告警通知器"""
+    """Console alert notifier"""
     
-    def send_alert(self, alert: Alert) -> bool:
-        """在控制台打印告警信息"""
-        print(f"\n[ALERT] {alert.severity.value} - {alert.title}")
+    def notify(self, alert: Alert) -> None:
+        """Print alert information to console"""
+        print(f"[{alert.severity.value}] {alert.title}")
         print(f"Source: {alert.source}")
+        print(f"Time: {alert.timestamp}")
         print(f"Message: {alert.message}")
         if alert.metadata:
             print("Metadata:", alert.metadata)
-        print(f"Time: {alert.timestamp}\n")
-        return True
+        print("-" * 80)
 
 class AlertManager:
-    """告警管理器"""
+    """Alert manager"""
     
-    def __init__(self, notifiers: Optional[List[AlertNotifier]] = None):
-        """初始化告警管理器"""
-        self.notifiers = notifiers or []
+    def __init__(self):
+        """Initialize alert manager"""
+        self.notifiers: List[AlertNotifier] = []
+        self.alerts: List[Alert] = []
+    
+    def add_notifier(self, notifier: AlertNotifier) -> None:
+        """Add alert notifier"""
+        self.notifiers.append(notifier)
     
     def trigger_alert(
         self,
         title: str,
         message: str,
-        severity: AlertSeverity = AlertSeverity.INFO,
-        source: str = None,
-        metadata: Dict[str, Any] = None
+        severity: AlertSeverity,
+        source: str,
+        metadata: Optional[Dict[str, Any]] = None
     ) -> None:
-        """触发告警"""
+        """Trigger alert"""
         alert = Alert(
             title=title,
             message=message,
             severity=severity,
-            timestamp=datetime.now(),
             source=source,
+            timestamp=datetime.now(),
             metadata=metadata or {}
         )
         
+        self.alerts.append(alert)
         for notifier in self.notifiers:
-            try:
-                notifier.send_alert(alert)
-            except Exception as e:
-                print(f"Failed to send alert via {notifier.__class__.__name__}: {e}")
-
-    def info(self, source: str, message: str, metadata: Dict[str, Any] = None) -> None:
-        """记录信息级别告警"""
+            notifier.notify(alert)
+    
+    def info(
+        self,
+        title: str,
+        message: str,
+        source: str,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """Record info level alert"""
         self.trigger_alert(
-            title="Information",
+            title=title,
             message=message,
             severity=AlertSeverity.INFO,
             source=source,
             metadata=metadata
         )
     
-    def warning(self, source: str, message: str, metadata: Dict[str, Any] = None) -> None:
-        """记录警告级别告警"""
+    def warning(
+        self,
+        title: str,
+        message: str,
+        source: str,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """Record warning level alert"""
         self.trigger_alert(
-            title="Warning",
+            title=title,
             message=message,
             severity=AlertSeverity.WARNING,
             source=source,
             metadata=metadata
         )
     
-    def error(self, source: str, message: str, metadata: Dict[str, Any] = None) -> None:
-        """记录错误级别告警"""
+    def error(
+        self,
+        title: str,
+        message: str,
+        source: str,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """Record error level alert"""
         self.trigger_alert(
-            title="Error",
+            title=title,
             message=message,
             severity=AlertSeverity.ERROR,
             source=source,
             metadata=metadata
         )
     
-    def critical(self, source: str, message: str, metadata: Dict[str, Any] = None) -> None:
-        """记录严重级别告警"""
+    def critical(
+        self,
+        title: str,
+        message: str,
+        source: str,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """Record critical level alert"""
         self.trigger_alert(
-            title="Critical",
+            title=title,
             message=message,
             severity=AlertSeverity.CRITICAL,
             source=source,
             metadata=metadata
         )
+    
+    def get_alert_history(self) -> List[Dict[str, Any]]:
+        """Get alert history"""
+        return self.alerts
 
     def get_alerts(self, 
                   severity: Optional[AlertSeverity] = None,
                   source: Optional[str] = None) -> List[Alert]:
-        """获取告警历史"""
+        """Get alert history"""
         alerts = []
         for notifier in self.notifiers:
             alerts.extend(notifier.get_alerts())

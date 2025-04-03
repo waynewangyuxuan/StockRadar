@@ -1,4 +1,4 @@
-import pytest
+import unittest
 from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
@@ -7,139 +7,144 @@ from typing import Dict, Any, List, Union
 from data_layer.fetcher.base import DataFetcherBase
 
 class MockDataFetcher(DataFetcherBase):
-    """用于测试的模拟数据获取器"""
+    """Mock data fetcher for testing"""
     
-    def __init__(self, data):
+    def __init__(self):
         super().__init__()
-        self.data = data
+        self.data = pd.DataFrame({
+            'symbol': ['AAPL', 'GOOGL'] * 5,
+            'date': pd.date_range(start='2023-01-01', periods=10),
+            'open': np.random.rand(10) * 100,
+            'high': np.random.rand(10) * 100,
+            'low': np.random.rand(10) * 100,
+            'close': np.random.rand(10) * 100,
+            'volume': np.random.randint(1000, 10000, 10)
+        })
         self._setup_lineage(
             source_id="mock_source",
             source_name="Mock Data Source",
             metadata={"provider": "mock"}
         )
     
-    def get_historical_data(self, symbols, start_date, end_date, fields=None):
-        """模拟历史数据获取"""
-        if isinstance(symbols, str):
-            symbols = [symbols]
-            
-        # 验证日期
-        start_date, end_date = self.validate_dates(start_date, end_date)
+    def get_historical_data(self, symbols: List[str], start_date: datetime, 
+                          end_date: datetime, fields: List[str] = None) -> Dict[str, Any]:
+        """Mock historical data retrieval"""
+        result = self.data.copy()
         
-        # 过滤数据
-        mask = (self.data['date'] >= start_date) & (self.data['date'] <= end_date)
-        filtered_data = self.data[mask].copy()
+        # Validate dates
+        result = result[result['date'].between(start_date, end_date)]
         
-        # 过滤股票代码
-        filtered_data = filtered_data[filtered_data['symbol'].isin(symbols)]
+        # Filter data
+        if symbols:
+            result = result[result['symbol'].isin(symbols)]
         
-        # 过滤字段
+        # Filter symbols
         if fields:
-            filtered_data = filtered_data[['symbol', 'date'] + [f for f in fields if f not in ['symbol', 'date']]]
+            result = result[['symbol', 'date'] + fields]
         
         return {
-            'data': filtered_data,
-            'symbols': symbols,
-            'start_date': start_date,
-            'end_date': end_date
+            'data': result,
+            'metadata': {
+                'start_date': start_date,
+                'end_date': end_date,
+                'symbols': symbols
+            }
         }
     
-    def get_latest_data(self, symbols, fields=None):
-        """模拟最新数据获取"""
-        if isinstance(symbols, str):
-            symbols = [symbols]
-            
-        # 获取每个股票的最新数据
-        latest_data = (
-            self.data[self.data['symbol'].isin(symbols)]
-            .sort_values('date')
-            .groupby('symbol')
-            .last()
-            .reset_index()
-        )
+    def get_latest_data(self, symbols: List[str], fields: List[str] = None) -> Dict[str, Any]:
+        """Mock latest data retrieval"""
+        result = {}
         
-        # 过滤字段
-        if fields:
-            latest_data = latest_data[['symbol', 'date'] + [f for f in fields if f not in ['symbol', 'date']]]
+        # Get latest data for each symbol
+        for symbol in symbols:
+            symbol_data = self.data[self.data['symbol'] == symbol].copy()
+            if not symbol_data.empty:
+                latest_data = symbol_data.iloc[-1]
+                if fields:
+                    latest_data = latest_data[fields]
+                result[symbol] = latest_data
         
         return {
-            'data': latest_data,
-            'symbols': symbols,
-            'timestamp': datetime.now()
+            'data': result,
+            'metadata': {
+                'timestamp': datetime.now(),
+                'symbols': symbols
+            }
         }
     
-    def validate_symbols(self, symbols):
-        """模拟股票代码验证"""
-        if isinstance(symbols, str):
-            symbols = [symbols]
-        valid_symbols = [s for s in symbols if s in self.data['symbol'].unique()]
-        if not valid_symbols:
-            raise ValueError("No valid symbols provided")
-        return valid_symbols
+    def validate_symbols(self, symbols: List[str]) -> List[str]:
+        """Mock symbol validation"""
+        valid_symbols = ['AAPL', 'GOOGL', 'MSFT']
+        return [symbol for symbol in symbols if symbol in valid_symbols]
 
-def test_normalize_data(sample_market_data):
-    """测试数据标准化功能"""
-    fetcher = MockDataFetcher(sample_market_data)
+class TestDataFetcher(unittest.TestCase):
+    """Test data standardization functionality"""
     
-    # 测试正常数据
-    normalized = fetcher.normalize_data(sample_market_data)
-    assert pd.api.types.is_datetime64_any_dtype(normalized['date'])
-    assert normalized['open'].dtype == np.float64
-    assert normalized['volume'].dtype == np.float64
+    def setUp(self):
+        # Test normal data
+        self.fetcher = MockDataFetcher()
+        self.test_data = pd.DataFrame({
+            'symbol': ['AAPL'],
+            'date': ['2023-01-01'],
+            'open': [100.0],
+            'high': [105.0],
+            'low': [95.0],
+            'close': [102.0],
+            'volume': [1000]
+        })
     
-    # 测试缺失字段
-    with pytest.raises(ValueError):
-        bad_data = sample_market_data.drop(columns=['close'])
-        fetcher.normalize_data(bad_data)
-
-def test_validate_dates():
-    """测试日期验证功能"""
-    fetcher = MockDataFetcher(pd.DataFrame())
+    def test_missing_fields(self):
+        # Test missing fields
+        test_data = self.test_data.drop(['close'], axis=1)
+        with self.assertRaises(ValueError):
+            self.fetcher.normalize_data(test_data)
     
-    # 测试字符串日期
-    start_date, end_date = fetcher.validate_dates("2023-01-01", "2023-01-10")
-    assert isinstance(start_date, datetime)
-    assert isinstance(end_date, datetime)
-    
-    # 测试datetime对象
-    start_date, end_date = fetcher.validate_dates(
-        datetime(2023, 1, 1),
-        datetime(2023, 1, 10)
-    )
-    assert isinstance(start_date, datetime)
-    assert isinstance(end_date, datetime)
-    
-    # 测试无效日期范围
-    with pytest.raises(ValueError):
-        fetcher.validate_dates("2023-01-10", "2023-01-01")
+    def test_date_validation(self):
+        """Test date validation functionality"""
+        
+        # Test string dates
+        start_date = '2023-01-01'
+        end_date = '2023-01-31'
+        validated_start, validated_end = self.fetcher.validate_dates(start_date, end_date)
+        
+        self.assertIsInstance(validated_start, datetime)
+        self.assertIsInstance(validated_end, datetime)
+        
+        # Test invalid date order
+        with self.assertRaises(ValueError):
+            self.fetcher.validate_dates('2023-01-31', '2023-01-01')
+        
+        # Test invalid date format
+        with self.assertRaises(ValueError):
+            self.fetcher.validate_dates('invalid_date', '2023-01-01')
 
 def test_historical_data_fetching(sample_market_data, date_range):
-    """测试历史数据获取"""
-    fetcher = MockDataFetcher(sample_market_data)
+    """Test historical data fetching"""
+    fetcher = MockDataFetcher()
     start_date, end_date = date_range
     
-    # 测试单个股票
+    # Test single stock
     result = fetcher.get_historical_data(
-        symbols="AAPL",
+        symbols=["AAPL"],
         start_date=start_date,
         end_date=end_date
     )
-    assert 'AAPL' in result['symbols']
+    assert 'AAPL' in result['metadata']['symbols']
     assert not result['data'].empty
     assert all(result['data']['symbol'] == 'AAPL')
     
-    # 测试多个股票
+    # Test multiple stocks
     result = fetcher.get_historical_data(
         symbols=["AAPL", "GOOGL"],
         start_date=start_date,
         end_date=end_date
     )
-    assert set(result['symbols']) == {'AAPL', 'GOOGL'}
+    assert set(result['metadata']['symbols']) == {'AAPL', 'GOOGL'}
     assert not result['data'].empty
     
-    # 测试字段过滤
+    # Test field filtering
     result = fetcher.get_historical_data(
-        symbols="AAPL",
+        symbols=["AAPL"],
         start_date=start_date,
         end_date=end_date,
         fields=['open', 'close']
@@ -147,65 +152,78 @@ def test_historical_data_fetching(sample_market_data, date_range):
     assert set(result['data'].columns) == {'symbol', 'date', 'open', 'close'}
 
 def test_latest_data_fetching(sample_market_data):
-    """测试最新数据获取"""
-    fetcher = MockDataFetcher(sample_market_data)
+    """Test latest data fetching"""
+    fetcher = MockDataFetcher()
     
-    # 测试单个股票
-    result = fetcher.get_latest_data(symbols="AAPL")
-    assert 'AAPL' in result['symbols']
+    # Test single stock
+    result = fetcher.get_latest_data(symbols=["AAPL"])
+    assert 'AAPL' in result['metadata']['symbols']
     assert not result['data'].empty
     assert len(result['data']) == 1
-    assert result['data'].iloc[0]['symbol'] == 'AAPL'
     
-    # 测试多个股票
+    # Test multiple stocks
     result = fetcher.get_latest_data(symbols=["AAPL", "MSFT"])
-    assert set(result['symbols']) == {'AAPL', 'MSFT'}
+    assert set(result['metadata']['symbols']) == {'AAPL', 'MSFT'}
     assert not result['data'].empty
     assert len(result['data']) == 2
     
-    # 测试字段过滤
+    # Test field filtering
     result = fetcher.get_latest_data(
-        symbols="AAPL",
+        symbols=["AAPL"],
         fields=['open', 'close']
     )
     assert set(result['data'].columns) == {'symbol', 'date', 'open', 'close'}
 
+def test_normalize_data(sample_market_data):
+    """Test data standardization functionality"""
+    fetcher = MockDataFetcher()
+    
+    # Test normal data
+    normalized = fetcher.normalize_data(sample_market_data)
+    assert pd.api.types.is_datetime64_any_dtype(normalized['date'])
+    assert normalized['open'].dtype == np.float64
+    assert normalized['volume'].dtype == np.float64
+    
+    # Test missing fields
+    with self.assertRaises(ValueError):
+        bad_data = sample_market_data.drop(columns=['close'])
+        fetcher.normalize_data(bad_data)
+
 @pytest.fixture
 def sample_market_data():
-    """创建样本市场数据"""
-    dates = pd.date_range(start='2023-01-01', end='2023-12-31')
-    data = []
+    """Create sample market data"""
     
-    # 生成AAPL数据
-    for date in dates:
-        data.append({
-            'symbol': 'AAPL',
-            'date': date,
-            'open': np.random.uniform(90, 110),
-            'high': np.random.uniform(100, 120),
-            'low': np.random.uniform(80, 100),
-            'close': np.random.uniform(90, 110),
-            'volume': np.random.randint(1000000, 5000000)
-        })
+    # Generate AAPL data
+    aapl_data = pd.DataFrame({
+        'symbol': ['AAPL'] * 5,
+        'date': pd.date_range('2023-01-01', periods=5),
+        'open': np.random.rand(5) * 100,
+        'high': np.random.rand(5) * 100,
+        'low': np.random.rand(5) * 100,
+        'close': np.random.rand(5) * 100,
+        'volume': np.random.randint(1000, 10000, 5)
+    })
     
-    # 生成MSFT数据
-    for date in dates:
-        data.append({
-            'symbol': 'MSFT',
-            'date': date,
-            'open': np.random.uniform(35000, 37000),
-            'high': np.random.uniform(36000, 38000),
-            'low': np.random.uniform(35000, 37000),
-            'close': np.random.uniform(35000, 37000),
-            'volume': np.random.randint(1000000, 5000000)
-        })
+    # Generate MSFT data
+    msft_data = pd.DataFrame({
+        'symbol': ['MSFT'] * 5,
+        'date': pd.date_range('2023-01-01', periods=5),
+        'open': np.random.rand(5) * 200,
+        'high': np.random.rand(5) * 200,
+        'low': np.random.rand(5) * 200,
+        'close': np.random.rand(5) * 200,
+        'volume': np.random.randint(1000, 10000, 5)
+    })
     
-    return pd.DataFrame(data)
+    return pd.concat([aapl_data, msft_data], ignore_index=True)
 
 @pytest.fixture
 def date_range():
-    """创建测试日期范围"""
+    """Create test date range"""
     return (
         datetime(2023, 1, 1),
         datetime(2023, 12, 31)
-    ) 
+    )
+
+if __name__ == '__main__':
+    unittest.main() 

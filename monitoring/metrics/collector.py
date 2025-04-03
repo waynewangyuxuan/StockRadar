@@ -1,92 +1,69 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
+import time
 
 @dataclass
 class MetricPoint:
-    """单个指标数据点"""
+    """Single metric data point"""
     name: str
     value: float
-    timestamp: datetime
     labels: Dict[str, str]
+    timestamp: float
 
 class MetricsCollector(ABC):
-    """指标收集器基类"""
+    """Base metrics collector class"""
     
     def __init__(self):
-        """初始化指标收集器"""
-        self.metrics = {}
-
+        """Initialize metrics collector"""
+        self.metrics = []
+    
     @abstractmethod
-    def record_latency(self, metric_name: str, duration_ms: float):
-        """记录延迟指标"""
+    def record_latency(self, operation: str, duration_ms: float, labels: Optional[Dict[str, str]] = None) -> None:
+        """Record latency metric"""
         pass
-
+    
     @abstractmethod
-    def record_data_quality(self, metric_name: str, success: bool, details: Dict[str, Any] = None):
-        """记录数据质量指标"""
+    def record_data_quality(self, check_name: str, success: bool, details: Optional[Dict[str, Any]] = None) -> None:
+        """Record data quality metric"""
         pass
-
+    
     @abstractmethod
-    def record_data_volume(self, metric_name: str, volume: int):
-        """记录数据量指标"""
+    def record_data_volume(self, source: str, count: int, labels: Optional[Dict[str, str]] = None) -> None:
+        """Record data volume metric"""
         pass
-
+    
     def get_metrics(self) -> List[MetricPoint]:
-        """获取收集的所有指标"""
+        """Get all collected metrics"""
         return self.metrics
 
 class DefaultMetricsCollector(MetricsCollector):
-    """默认指标收集器"""
+    """Default metrics collector implementation"""
     
-    def record_latency(self, metric_name: str, duration_ms: float):
-        """记录延迟指标"""
-        if metric_name not in self.metrics:
-            self.metrics[metric_name] = {
-                'count': 0,
-                'total': 0,
-                'average': 0
-            }
-        
-        metric = self.metrics[metric_name]
-        metric['count'] += 1
-        metric['total'] += duration_ms
-        metric['average'] = metric['total'] / metric['count']
+    def record_latency(self, operation: str, duration_ms: float, labels: Optional[Dict[str, str]] = None) -> None:
+        """Record latency metric"""
+        self.metrics.append(MetricPoint(
+            name=f"{operation}_latency_ms",
+            value=duration_ms,
+            labels=labels or {},
+            timestamp=time.time()
+        ))
     
-    def record_data_volume(self, metric_name: str, volume: int):
-        """记录数据量指标"""
-        if metric_name not in self.metrics:
-            self.metrics[metric_name] = {
-                'count': 0,
-                'total': 0,
-                'average': 0
-            }
-        
-        metric = self.metrics[metric_name]
-        metric['count'] += 1
-        metric['total'] += volume
-        metric['average'] = metric['total'] / metric['count']
+    def record_data_volume(self, source: str, count: int, labels: Optional[Dict[str, str]] = None) -> None:
+        """Record data volume metric"""
+        self.metrics.append(MetricPoint(
+            name=f"{source}_data_volume",
+            value=count,
+            labels=labels or {},
+            timestamp=time.time()
+        ))
     
-    def record_data_quality(self, metric_name: str, success: bool, details: Dict[str, Any] = None):
-        """记录数据质量指标"""
-        if metric_name not in self.metrics:
-            self.metrics[metric_name] = {
-                'count': 0,
-                'success_count': 0,
-                'success_rate': 0,
-                'details': []
-            }
-        
-        metric = self.metrics[metric_name]
-        metric['count'] += 1
-        if success:
-            metric['success_count'] += 1
-        metric['success_rate'] = metric['success_count'] / metric['count']
-        
-        if details:
-            metric['details'].append({
-                'timestamp': datetime.now().isoformat(),
-                'success': success,
-                'details': details
-            }) 
+    def record_data_quality(self, check_name: str, success: bool, details: Optional[Dict[str, Any]] = None) -> None:
+        """Record data quality metric"""
+        self.metrics.append(MetricPoint(
+            name=f"{check_name}_quality",
+            value=1.0 if success else 0.0,
+            labels=details or {},
+            timestamp=time.time()
+        )) 

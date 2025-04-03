@@ -13,37 +13,37 @@ class OperationType(Enum):
 
 @dataclass
 class DataNode:
-    """数据节点"""
+    """Data node"""
     id: str
     name: str
-    type: str  # 例如: "table", "file", "api"
+    type: str  # e.g., "table", "file", "api"
     metadata: Dict[str, str]
 
 @dataclass
 class Operation:
-    """数据操作"""
+    """Data operation"""
     type: OperationType
     timestamp: datetime
-    operator: str  # 执行操作的组件名称
+    operator: str  # Name of the component performing the operation
     details: Dict[str, str]
 
 @dataclass
 class LineageEdge:
-    """血缘关系边"""
+    """Lineage relationship edge"""
     source: DataNode
     target: DataNode
     operation: Operation
 
 class LineageTracker:
-    """数据血缘跟踪器"""
+    """Data lineage tracker"""
 
     def __init__(self):
-        """初始化数据血缘跟踪器"""
+        """Initialize the data lineage tracker"""
         self.nodes = {}
         self.edges = []
 
     def create_source_node(self, source_id: str, source_name: str, metadata: Dict[str, Any] = None) -> DataNode:
-        """创建数据源节点"""
+        """Create source node"""
         node = DataNode(
             id=source_id,
             name=source_name,
@@ -60,8 +60,8 @@ class LineageTracker:
         input_data: Dict[str, Any],
         output_data: pd.DataFrame
     ) -> None:
-        """记录数据操作"""
-        # 创建操作节点
+        """Record data operation"""
+        # Create operation node
         operation_node = DataNode(
             id=f"{source_node.id}_{operation}_{datetime.now().strftime('%Y%m%d%H%M%S')}",
             name=operation,
@@ -70,7 +70,7 @@ class LineageTracker:
         )
         self.nodes[operation_node.id] = operation_node
 
-        # 创建输出节点
+        # Create output node
         output_node = DataNode(
             id=f"{operation_node.id}_output",
             name="output",
@@ -82,16 +82,16 @@ class LineageTracker:
         )
         self.nodes[output_node.id] = output_node
 
-        # 添加边
+        # Add edges
         self.edges.append((source_node.id, operation_node.id))
         self.edges.append((operation_node.id, output_node.id))
 
     def add_node(self, node: DataNode) -> None:
-        """添加数据节点"""
+        """Add data node"""
         self.nodes[node.id] = node
 
     def add_edge(self, source_id: str, target_id: str, operation: Operation) -> None:
-        """添加血缘关系"""
+        """Add lineage relationship"""
         source = self.nodes.get(source_id)
         target = self.nodes.get(target_id)
         
@@ -102,7 +102,7 @@ class LineageTracker:
         self.edges.append((source_id, target_id))
 
     def get_upstream_nodes(self, node_id: str) -> Set[DataNode]:
-        """获取上游节点"""
+        """Get upstream nodes"""
         result = set()
         for edge in self.edges:
             if edge[1] == node_id:
@@ -110,7 +110,7 @@ class LineageTracker:
         return result
 
     def get_downstream_nodes(self, node_id: str) -> Set[DataNode]:
-        """获取下游节点"""
+        """Get downstream nodes"""
         result = set()
         for edge in self.edges:
             if edge[0] == node_id:
@@ -118,7 +118,7 @@ class LineageTracker:
         return result
 
     def get_node_operations(self, node_id: str) -> List[Operation]:
-        """获取节点相关的所有操作"""
+        """Get all operations related to the node"""
         operations = []
         for edge in self.edges:
             if edge[0] == node_id or edge[1] == node_id:
@@ -131,7 +131,7 @@ class LineageTracker:
         return operations
 
     def export_graph(self) -> Dict:
-        """导出血缘图数据"""
+        """Export lineage graph data"""
         return {
             "nodes": list(self.nodes.values()),
             "edges": self.edges
