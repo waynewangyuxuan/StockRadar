@@ -62,10 +62,12 @@ class DataFetcherBase(ABC):
         )
         raise error
 
-    def standardize_format(self, df: pd.DataFrame) -> pd.DataFrame:
+    def standardize_format(self, df: pd.DataFrame, required_fields: List[str] = None) -> pd.DataFrame:
         """Standardize data format"""
-        # Ensure required fields exist
-        required_fields = ['date', 'open', 'high', 'low', 'close', 'volume']
+        # Use default required fields if none specified
+        if required_fields is None:
+            required_fields = ['date', 'open', 'high', 'low', 'close', 'volume']
+            
         missing_fields = [field for field in required_fields if field not in df.columns]
         if missing_fields:
             raise ValueError(f"Data missing required fields: {missing_fields}")
@@ -73,10 +75,11 @@ class DataFetcherBase(ABC):
         # Standardize date format
         df['date'] = pd.to_datetime(df['date'])
         
-        # Ensure numeric types are correct
+        # Ensure numeric types are correct for available fields
         numeric_fields = ['open', 'high', 'low', 'close', 'volume']
         for field in numeric_fields:
-            df[field] = pd.to_numeric(df[field], errors='coerce')
+            if field in df.columns:
+                df[field] = pd.to_numeric(df[field], errors='coerce')
         
         return df
 
@@ -87,18 +90,21 @@ class DataFetcherBase(ABC):
         except Exception as e:
             raise ValueError(f"Invalid date format: {date_str}") from e
 
-    def normalize_data(self, df: pd.DataFrame) -> pd.DataFrame:
+    def normalize_data(self, df: pd.DataFrame, required_fields: List[str] = None) -> pd.DataFrame:
         """
         Standardize data format
 
         Args:
             df: Original DataFrame
+            required_fields: List of required fields. If None, uses default required fields.
 
         Returns:
             pd.DataFrame: Standardized data
         """
-        # Ensure required fields exist
-        required_fields = ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume']
+        # Use default required fields if none specified
+        if required_fields is None:
+            required_fields = ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume']
+            
         missing_fields = [field for field in required_fields if field not in df.columns]
         if missing_fields:
             raise ValueError(f"Missing required fields: {missing_fields}")
@@ -107,10 +113,11 @@ class DataFetcherBase(ABC):
         if not pd.api.types.is_datetime64_any_dtype(df['date']):
             df['date'] = pd.to_datetime(df['date'])
         
-        # Ensure numeric types are correct
+        # Ensure numeric types are correct for available fields
         numeric_fields = ['open', 'high', 'low', 'close', 'volume']
         for field in numeric_fields:
-            df[field] = pd.to_numeric(df[field], errors='coerce').astype(np.float64)
+            if field in df.columns:
+                df[field] = pd.to_numeric(df[field], errors='coerce').astype(np.float64)
         
         return df
 

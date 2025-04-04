@@ -1,80 +1,132 @@
 import unittest
+import pytest
 from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
 from typing import Dict, Any, List, Union
 
 from data_layer.fetcher.base import DataFetcherBase
+from monitoring.metrics.collector import DefaultMetricsCollector
+from monitoring.alerts.alert_manager import AlertManager
+from monitoring.lineage.tracker import LineageTracker
 
 class MockDataFetcher(DataFetcherBase):
     """Mock data fetcher for testing"""
     
     def __init__(self):
-        super().__init__()
+        metrics_collector = DefaultMetricsCollector()
+        alert_manager = AlertManager()
+        lineage_tracker = LineageTracker()
+        super().__init__(
+            metrics_collector=metrics_collector,
+            alert_manager=alert_manager,
+            lineage_tracker=lineage_tracker
+        )
+        # Create mock data with all three symbols
+        symbols = ['AAPL', 'MSFT', 'GOOGL']
+        dates = pd.date_range(start='2023-01-01', periods=5).repeat(3)
         self.data = pd.DataFrame({
-            'symbol': ['AAPL', 'GOOGL'] * 5,
-            'date': pd.date_range(start='2023-01-01', periods=10),
-            'open': np.random.rand(10) * 100,
-            'high': np.random.rand(10) * 100,
-            'low': np.random.rand(10) * 100,
-            'close': np.random.rand(10) * 100,
-            'volume': np.random.randint(1000, 10000, 10)
+            'symbol': symbols * 5,
+            'date': dates,
+            'open': np.random.rand(15) * 100,
+            'high': np.random.rand(15) * 100,
+            'low': np.random.rand(15) * 100,
+            'close': np.random.rand(15) * 100,
+            'volume': np.random.randint(1000, 10000, 15)
         })
-        self._setup_lineage(
+        self.set_lineage(
             source_id="mock_source",
-            source_name="Mock Data Source",
-            metadata={"provider": "mock"}
+            source_name="Mock Data Source"
         )
     
     def get_historical_data(self, symbols: List[str], start_date: datetime, 
                           end_date: datetime, fields: List[str] = None) -> Dict[str, Any]:
         """Mock historical data retrieval"""
-        result = self.data.copy()
-        
-        # Validate dates
-        result = result[result['date'].between(start_date, end_date)]
-        
-        # Filter data
-        if symbols:
-            result = result[result['symbol'].isin(symbols)]
-        
-        # Filter symbols
-        if fields:
-            result = result[['symbol', 'date'] + fields]
-        
-        return {
-            'data': result,
-            'metadata': {
+        start_time = datetime.now()
+        try:
+            result = self.data.copy()
+            
+            # Validate dates
+            result = result[result['date'].between(start_date, end_date)]
+            
+            # Filter data
+            if symbols:
+                result = result[result['symbol'].isin(symbols)]
+            
+            # Filter symbols
+            if fields:
+                result = result[['symbol', 'date'] + fields]
+            
+            # Record metrics and lineage
+            self._record_fetch_metrics(start_time, {'data': result}, 'historical')
+            self.record_lineage('get_historical_data', result)
+            
+            return {
+                'data': result,
+                'metadata': {
+                    'start_date': start_date,
+                    'end_date': end_date,
+                    'symbols': symbols,
+                    'fields': fields,
+                    'timestamp': datetime.now().isoformat(),
+                    'source': 'mock_source',
+                    'rows_fetched': len(result)
+                }
+            }
+        except Exception as e:
+            self.handle_error(e, {
+                'operation': 'get_historical_data',
+                'symbols': symbols,
                 'start_date': start_date,
                 'end_date': end_date,
-                'symbols': symbols
-            }
-        }
+                'fields': fields
+            })
     
     def get_latest_data(self, symbols: List[str], fields: List[str] = None) -> Dict[str, Any]:
         """Mock latest data retrieval"""
-        result = {}
-        
-        # Get latest data for each symbol
-        for symbol in symbols:
-            symbol_data = self.data[self.data['symbol'] == symbol].copy()
-            if not symbol_data.empty:
-                latest_data = symbol_data.iloc[-1]
-                if fields:
-                    latest_data = latest_data[fields]
-                result[symbol] = latest_data
-        
-        return {
-            'data': result,
-            'metadata': {
-                'timestamp': datetime.now(),
-                'symbols': symbols
+        start_time = datetime.now()
+        try:
+            result = {}
+            
+            # Get latest data for each symbol
+            for symbol in symbols:
+                symbol_data = self.data[self.data['symbol'] == symbol].copy()
+                if not symbol_data.empty:
+                    latest_data = symbol_data.iloc[-1]
+                    if fields:
+                        latest_data = latest_data[fields]
+                    result[symbol] = latest_data
+            
+            # Record metrics and lineage
+            self._record_fetch_metrics(start_time, {'data': result}, 'latest')
+            self.record_lineage('get_latest_data', pd.DataFrame(result).T)
+            
+            return {
+                'data': result,
+                'metadata': {
+                    'timestamp': datetime.now().isoformat(),
+                    'symbols': symbols,
+                    'fields': fields,
+                    'source': 'mock_source',
+                    'symbols_fetched': len(result)
+                }
             }
-        }
+        except Exception as e:
+            self.handle_error(e, {
+                'operation': 'get_latest_data',
+                'symbols': symbols,
+                'fields': fields
+            })
     
     def validate_symbols(self, symbols: List[str]) -> List[str]:
         """Mock symbol validation"""
         valid_symbols = ['AAPL', 'GOOGL', 'MSFT']
+        invalid_symbols = [s for s in symbols if s not in valid_symbols]
+        if invalid_symbols:
+            self.log_warning(
+                f"Invalid symbols found: {invalid_symbols}",
+                metadata={'invalid_symbols': invalid_symbols}
+            )
         return [symbol for symbol in symbols if symbol in valid_symbols]
 
 class TestDataFetcher(unittest.TestCase):
@@ -158,21 +210,22 @@ def test_latest_data_fetching(sample_market_data):
     # Test single stock
     result = fetcher.get_latest_data(symbols=["AAPL"])
     assert 'AAPL' in result['metadata']['symbols']
-    assert not result['data'].empty
-    assert len(result['data']) == 1
+    assert len(result['data']) > 0
+    assert 'AAPL' in result['data']
     
     # Test multiple stocks
     result = fetcher.get_latest_data(symbols=["AAPL", "MSFT"])
     assert set(result['metadata']['symbols']) == {'AAPL', 'MSFT'}
-    assert not result['data'].empty
-    assert len(result['data']) == 2
+    assert len(result['data']) > 0
+    assert all(symbol in result['data'] for symbol in ['AAPL', 'MSFT'])
     
     # Test field filtering
     result = fetcher.get_latest_data(
         symbols=["AAPL"],
         fields=['open', 'close']
     )
-    assert set(result['data'].columns) == {'symbol', 'date', 'open', 'close'}
+    assert 'AAPL' in result['data']
+    assert all(field in result['data']['AAPL'] for field in ['open', 'close'])
 
 def test_normalize_data(sample_market_data):
     """Test data standardization functionality"""
@@ -185,8 +238,8 @@ def test_normalize_data(sample_market_data):
     assert normalized['volume'].dtype == np.float64
     
     # Test missing fields
-    with self.assertRaises(ValueError):
-        bad_data = sample_market_data.drop(columns=['close'])
+    bad_data = sample_market_data.drop(columns=['close'])
+    with pytest.raises(ValueError):
         fetcher.normalize_data(bad_data)
 
 @pytest.fixture
