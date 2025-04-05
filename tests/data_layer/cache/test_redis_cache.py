@@ -4,8 +4,8 @@ from unittest.mock import Mock, patch, MagicMock
 from redis.exceptions import RedisError
 
 from data_layer.cache.redis_cache import RedisCache
-from monitoring.alerts.alert_manager import AlertManager
-from monitoring.metrics.collector import MetricsCollector
+from data_layer.monitoring.alerts import AlertManager
+from data_layer.monitoring.metrics import MetricsCollector
 
 @pytest.fixture
 def mock_data():

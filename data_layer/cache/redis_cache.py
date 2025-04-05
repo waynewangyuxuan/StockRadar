@@ -4,8 +4,8 @@ from datetime import datetime, timedelta
 import redis
 from redis.exceptions import RedisError
 
-from monitoring.alerts.alert_manager import AlertManager
-from monitoring.metrics.collector import MetricsCollector
+from data_layer.monitoring.alerts import AlertManager
+from data_layer.monitoring.metrics import MetricsCollector
 
 class RedisCache:
     """Redis cache implementation for market data"""

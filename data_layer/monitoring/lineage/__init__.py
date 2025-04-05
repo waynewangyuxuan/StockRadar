@@ -1,6 +1,6 @@
 """Data lineage module providing data flow and processing tracking functionality"""
 
-from monitoring.lineage.tracker import LineageTracker, DataNode, Operation, OperationType
+from data_layer.monitoring.lineage.tracker import LineageTracker, DataNode, Operation, OperationType
 
 __all__ = [
     'LineageTracker',

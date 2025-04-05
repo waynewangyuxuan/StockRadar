@@ -4,9 +4,9 @@ import pandas as pd
 import numpy as np
 
 from data_layer.processor.base import DataProcessorBase
-from monitoring.metrics import MetricsCollector
-from monitoring.alerts import AlertManager
-from monitoring.lineage import LineageTracker
+from data_layer.monitoring.metrics import MetricsCollector
+from data_layer.monitoring.alerts import AlertManager
+from data_layer.monitoring.lineage import LineageTracker
 
 class MarketDataProcessor(DataProcessorBase):
     """Market data processor implementation"""

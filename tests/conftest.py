@@ -3,9 +3,9 @@ from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
 
-from monitoring.metrics.collector import DefaultMetricsCollector
-from monitoring.alerts.alert_manager import AlertManager, ConsoleAlertNotifier
-from monitoring.lineage.tracker import LineageTracker
+from data_layer.monitoring.metrics import DefaultMetricsCollector
+from data_layer.monitoring.alerts import AlertManager, ConsoleAlertNotifier
+from data_layer.monitoring.lineage import LineageTracker
 
 @pytest.fixture
 def sample_market_data():

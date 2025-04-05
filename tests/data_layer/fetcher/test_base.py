@@ -6,9 +6,9 @@ import numpy as np
 from typing import Dict, Any, List, Union
 
 from data_layer.fetcher.base import DataFetcherBase
-from monitoring.metrics.collector import DefaultMetricsCollector
-from monitoring.alerts.alert_manager import AlertManager
-from monitoring.lineage.tracker import LineageTracker
+from data_layer.monitoring.metrics import DefaultMetricsCollector
+from data_layer.monitoring.alerts import AlertManager
+from data_layer.monitoring.lineage import LineageTracker
 
 class MockDataFetcher(DataFetcherBase):
     """Mock data fetcher for testing"""

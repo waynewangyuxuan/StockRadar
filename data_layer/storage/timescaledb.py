@@ -7,12 +7,12 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
 import json
 
-from .base import StorageBase
-from monitoring.alerts.alert_manager import AlertManager
-from monitoring.metrics.collector import MetricsCollector
+from .base import DataStorageBase
+from data_layer.monitoring.alerts import AlertManager
+from data_layer.monitoring.metrics import MetricsCollector
 from data_layer.cache.redis_cache import RedisCache
 
-class TimescaleDBStorage(StorageBase):
+class TimescaleDBStorage(DataStorageBase):
     """TimescaleDB storage implementation"""
     
     def __init__(

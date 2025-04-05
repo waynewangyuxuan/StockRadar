@@ -6,9 +6,9 @@ import pandas as pd
 from unittest.mock import Mock, patch
 
 from data_layer.fetcher.yfinance_provider import YFinanceProvider
-from monitoring.metrics import DefaultMetricsCollector
-from monitoring.alerts import AlertManager
-from monitoring.lineage import LineageTracker
+from data_layer.monitoring.metrics import DefaultMetricsCollector
+from data_layer.monitoring.alerts import AlertManager
+from data_layer.monitoring.lineage import LineageTracker
 
 @pytest.fixture
 def mock_data():

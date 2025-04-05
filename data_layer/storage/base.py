@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 
-class StorageBase(ABC):
+class DataStorageBase(ABC):
     """Base class for all storage implementations"""
     
     def __init__(self):

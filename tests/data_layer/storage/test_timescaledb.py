@@ -7,8 +7,8 @@ from sqlalchemy.exc import OperationalError
 from psycopg2 import OperationalError as Psycopg2OperationalError
 
 from data_layer.storage.timescaledb import TimescaleDBStorage
-from monitoring.alerts.alert_manager import AlertManager
-from monitoring.metrics.collector import MetricsCollector
+from data_layer.monitoring.alerts import AlertManager
+from data_layer.monitoring.metrics import MetricsCollector
 from data_layer.cache.redis_cache import RedisCache
 
 @pytest.fixture

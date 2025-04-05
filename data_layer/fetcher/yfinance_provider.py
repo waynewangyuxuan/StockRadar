@@ -4,9 +4,9 @@ import pandas as pd
 import yfinance as yf
 
 from data_layer.fetcher.base import DataFetcherBase
-from monitoring.metrics.collector import DefaultMetricsCollector
-from monitoring.alerts.alert_manager import AlertManager, AlertSeverity
-from monitoring.lineage.tracker import LineageTracker
+from data_layer.monitoring.metrics import DefaultMetricsCollector
+from data_layer.monitoring.alerts import AlertManager, AlertSeverity
+from data_layer.monitoring.lineage import LineageTracker
 
 class YFinanceProvider(DataFetcherBase):
     """Yahoo Finance data provider implementation"""

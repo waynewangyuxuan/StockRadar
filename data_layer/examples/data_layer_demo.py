@@ -8,9 +8,9 @@ from typing import Dict, Any, List
 
 from data_layer.fetcher.yfinance_provider import YFinanceProvider
 from data_layer.processor.market_data_processor import MarketDataProcessor
-from monitoring.metrics.collector import DefaultMetricsCollector
-from monitoring.alerts import AlertManager, AlertSeverity, ConsoleAlertNotifier
-from monitoring.lineage import LineageTracker
+from data_layer.monitoring.metrics import DefaultMetricsCollector
+from data_layer.monitoring.alerts import AlertManager, AlertSeverity, ConsoleAlertNotifier
+from data_layer.monitoring.lineage import LineageTracker
 
 def print_section(title: str) -> None:
     """Print section title"""

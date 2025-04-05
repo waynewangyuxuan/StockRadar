@@ -1,4 +1,4 @@
-from .base import StorageBase
+from .base import DataStorageBase
 from .timescaledb import TimescaleDBStorage
 
-__all__ = ['StorageBase', 'TimescaleDBStorage']
+__all__ = ['DataStorageBase', 'TimescaleDBStorage']

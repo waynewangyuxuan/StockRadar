@@ -2,9 +2,9 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 import pandas as pd
 
-from monitoring.metrics.collector import MetricsCollector
-from monitoring.alerts.alert_manager import AlertManager
-from monitoring.lineage.tracker import LineageTracker
+from data_layer.monitoring.metrics import MetricsCollector
+from data_layer.monitoring.alerts import AlertManager
+from data_layer.monitoring.lineage import LineageTracker
 
 class DataProcessorBase(ABC):
     """Base data processor class"""
