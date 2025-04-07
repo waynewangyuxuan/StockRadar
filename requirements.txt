@@ -1,11 +1,33 @@
-# Database
-sqlalchemy>=2.0.0
-psycopg2-binary>=2.9.9
-redis>=5.0.1
+# Core dependencies
+pandas>=2.2.0  # Data manipulation and analysis
+numpy>=1.24.0  # Numerical computations
+pyarrow>=14.0.1  # Required for Parquet file format
+
+# Storage backends
+redis>=5.0.0  # Redis cache storage
+psycopg2-binary>=2.9.0  # PostgreSQL/TimescaleDB connector
+sqlalchemy>=2.0.0  # SQL ORM for database operations
+
+# Testing and development
+pytest>=8.0.0  # Testing framework
+pytest-asyncio>=0.23.0  # Async test support
+pytest-cov>=4.1.0  # Test coverage
+pytest-mock>=3.12.0  # Mocking in tests
+
+# Logging and monitoring
+python-json-logger>=2.0.0  # JSON formatted logging
+
+# Type checking and linting
+mypy>=1.8.0  # Static type checking
+black>=24.1.0  # Code formatting
+flake8>=7.0.0  # Code linting
+isort>=5.13.0  # Import sorting
+
+# Documentation
+sphinx>=7.2.0  # Documentation generator
+sphinx-rtd-theme>=2.0.0  # Documentation theme
 
 # Data Processing
-pandas>=1.5.0
-numpy>=1.21.0
 pyspark>=3.3.0  # Optional, for large-scale data processing
 yfinance>=0.2.0
 
@@ -16,15 +38,5 @@ pyyaml>=6.0.0
 pyarrow>=10.0.0  # Parquet support
 
 # Testing
-pytest>=7.0.0
-pytest-asyncio>=0.23.0
-pytest-cov>=4.0.0
-pytest-mock>=3.12.0
 pytest-timeout>=2.2.0
-pytest-xdist>=3.5.0
-
-# Development
-black>=24.0.0
-isort>=5.13.0
-flake8>=7.0.0
-mypy>=1.8.0 
+pytest-xdist>=3.5.0 

@@ -1,84 +1,175 @@
 # StockRadar
 
-StockRadar is a Python library for stock data retrieval, processing, and analysis. It provides a comprehensive set of tools for fetching stock data from multiple sources, performing technical analysis, and supporting real-time monitoring and alerting.
+A stock market data analysis and storage system with support for multiple storage backends.
 
 ## Features
 
-- Data Retrieval: Support for fetching historical and real-time stock data from Yahoo Finance
-- Data Processing: Built-in calculation of various technical indicators
-- Monitoring System: Support for performance metrics collection, alerting, and data lineage tracking
-- Extensible: Modular design, easy to add new data sources and processors
+- Multiple storage backends:
+  - Local file storage (Parquet format)
+  - Redis cache for fast access
+  - TimescaleDB for time-series data
+- Data versioning and snapshot management
+- Comprehensive test suite
+- Docker-based deployment
 
-## Installation
+## Prerequisites
 
-```bash
-pip install -r requirements.txt
-```
+- Python 3.9 or higher
+- Docker and Docker Compose
+- Git
 
 ## Quick Start
 
-```python
-from data_layer.fetcher.yfinance_provider import YFinanceProvider
-from monitoring.metrics.collector import DefaultMetricsCollector
-from monitoring.alerts.alert_manager import AlertManager
-from monitoring.lineage.tracker import LineageTracker
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/stockradar.git
+cd stockradar
+```
 
-# Initialize components
-provider = YFinanceProvider(
-    metrics_collector=DefaultMetricsCollector(),
-    alert_manager=AlertManager(),
-    lineage_tracker=LineageTracker()
-)
+2. Start the services using Docker Compose:
+```bash
+docker compose up -d
+```
 
-# Fetch data
-data = provider.get_historical_data(
-    symbols=['AAPL', 'MSFT'],
-    start_date='2024-01-01',
-    end_date='2024-04-01'
-)
+This will start:
+- Redis on port 6379
+- TimescaleDB on port 5432
+- The StockRadar application
 
-print(data['data'].head())
+3. Verify the services are running:
+```bash
+docker compose ps
+```
+
+## Development Setup
+
+1. Create and activate a virtual environment:
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
+
+2. Install development dependencies:
+```bash
+pip install -e ".[dev]"
+```
+
+3. Run the tests:
+```bash
+pytest
 ```
 
 ## Project Structure
 
 ```
-StockRadar/
-├── data_layer/           # Data layer
-│   ├── fetcher/         # Data fetching
-│   └── processor/       # Data processing
-├── monitoring/          # Monitoring system
-│   ├── metrics/        # Performance metrics
-│   ├── alerts/         # Alert system
-│   └── lineage/        # Data lineage
-├── tests/              # Test cases
-└── examples/           # Example code
+stockradar/
+├── data_storage/          # Storage implementations
+│   ├── base.py           # Base storage class
+│   ├── local_storage.py  # Local file storage
+│   ├── redis_cache.py    # Redis cache storage
+│   ├── timescaledb_storage.py  # TimescaleDB storage
+│   └── version_control.py # Version control system
+├── tests/                # Test suite
+├── docker-compose.yml    # Docker services configuration
+├── Dockerfile           # Application container
+├── requirements.txt     # Python dependencies
+└── setup.py            # Package configuration
 ```
 
-## Performance Optimization Plan
+## Storage Backends
 
-The current version of the data processing module is implemented in pure Python. To improve performance, we plan to:
+### Local Storage
+- Uses Parquet format for efficient storage
+- Supports data versioning
+- Suitable for development and testing
 
-1. Phase 1: Optimize existing Python code using numba
-2. Phase 2: Rewrite critical calculations using Cython
-3. Phase 3: Implement core algorithms in C++
+### Redis Cache
+- Fast in-memory storage
+- Supports data versioning
+- Ideal for frequently accessed data
 
-Expected performance improvements:
-- Basic calculations: 3-10x
-- Vectorized operations: 5-20x
-- SIMD optimization: 10-30x
+### TimescaleDB
+- Time-series optimized storage
+- Supports data versioning
+- Best for historical data analysis
 
-## Development Log
+## Data Versioning
 
-See [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md) for details
+The system supports data versioning through the `VersionControl` class:
+```python
+from data_storage import VersionControl, LocalStorage
+
+# Initialize version control
+storage = LocalStorage()
+version_control = VersionControl(storage)
+
+# Create a new version
+version_id, success = version_control.create_version(
+    data,
+    'dataset_name',
+    {'description': 'Initial version'}
+)
+
+# Get a specific version
+data, metadata = version_control.get_version('dataset_name', version_id)
+```
+
+## Testing
+
+Run the test suite:
+```bash
+# Run all tests
+pytest
+
+# Run specific test file
+pytest tests/test_data_storage.py
+
+# Run with coverage report
+pytest --cov=stockradar
+```
+
+## Docker Commands
+
+```bash
+# Start services
+docker compose up -d
+
+# Stop services
+docker compose down
+
+# View logs
+docker compose logs -f
+
+# Rebuild containers
+docker compose up -d --build
+
+# Access Redis CLI
+docker compose exec redis redis-cli
+
+# Access TimescaleDB
+docker compose exec timescaledb psql -U postgres -d stockradar
+```
+
+## Environment Variables
+
+The following environment variables can be configured:
+
+- `REDIS_HOST`: Redis server host (default: localhost)
+- `REDIS_PORT`: Redis server port (default: 6379)
+- `POSTGRES_HOST`: TimescaleDB host (default: localhost)
+- `POSTGRES_PORT`: TimescaleDB port (default: 5432)
+- `POSTGRES_DB`: Database name (default: stockradar)
+- `POSTGRES_USER`: Database user (default: postgres)
+- `POSTGRES_PASSWORD`: Database password (default: postgres)
 
 ## Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Commit your changes
-4. Submit a Pull Request
+4. Push to the branch
+5. Create a Pull Request
 
 ## License
 
-MIT License 
+This project is licensed under the MIT License - see the LICENSE file for details. 
