@@ -32,4 +32,6 @@ htmlcov/
 
 # Local development settings
 .env
-.env.local 
+.env.local
+
+act.sh
