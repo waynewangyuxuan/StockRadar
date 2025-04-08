@@ -31,8 +31,10 @@ class StrategyBase(ABC):
         
         Args:
             market_data: DataFrame containing market data with at least:
-                       ['ticker', 'date', 'open', 'high', 'low', 'close', 'volume']
+                       ['open', 'high', 'low', 'close', 'volume']
+                       and a multi-index of ['date', 'ticker']
             factor_data: Optional DataFrame containing pre-computed factor values
+                        with matching multi-index
         
         Returns:
             DataFrame with at least these columns added:
@@ -62,8 +64,16 @@ class StrategyBase(ABC):
         Returns:
             True if valid, raises ValueError if invalid
         """
+        # Check market data has multi-index
+        if not isinstance(market_data.index, pd.MultiIndex):
+            raise ValueError("Market data must have a multi-index ['date', 'ticker']")
+        
+        # Check market data index names
+        if market_data.index.names != ['date', 'ticker']:
+            raise ValueError("Market data index must be named ['date', 'ticker']")
+        
         # Check market data columns
-        required_market_cols = ['ticker', 'date', 'open', 'high', 'low', 'close', 'volume']
+        required_market_cols = ['open', 'high', 'low', 'close', 'volume']
         missing_market = [col for col in required_market_cols if col not in market_data.columns]
         if missing_market:
             raise ValueError(f"Missing required market data columns: {missing_market}")
@@ -73,9 +83,22 @@ class StrategyBase(ABC):
         if required_factors:
             if factor_data is None:
                 raise ValueError(f"Strategy {self.name} requires factors but none provided: {required_factors}")
+            
+            # Check factor data has matching multi-index
+            if not isinstance(factor_data.index, pd.MultiIndex):
+                raise ValueError("Factor data must have a multi-index ['date', 'ticker']")
+            
+            if factor_data.index.names != ['date', 'ticker']:
+                raise ValueError("Factor data index must be named ['date', 'ticker']")
+            
+            # Check factor columns
             missing_factors = [f for f in required_factors if f not in factor_data.columns]
             if missing_factors:
                 raise ValueError(f"Missing required factor columns: {missing_factors}")
+                
+            # Check indices match
+            if not market_data.index.equals(factor_data.index):
+                raise ValueError("Market data and factor data indices must match")
                 
         return True
     

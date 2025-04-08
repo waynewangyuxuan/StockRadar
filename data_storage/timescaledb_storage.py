@@ -54,8 +54,13 @@ class TimescaleDBStorage(DataStorageBase):
         try:
             with self._get_connection() as conn:
                 with conn.cursor() as cur:
-                    # Set search path
+                    # Create schema if not exists
                     schema = self.config.get('schema', 'public')
+                    cur.execute(f"""
+                        CREATE SCHEMA IF NOT EXISTS {schema};
+                    """)
+
+                    # Set search path
                     cur.execute(f"""
                         SET search_path TO {schema}, public;
                     """)
@@ -102,6 +107,7 @@ class TimescaleDBStorage(DataStorageBase):
                         );
                     """)
 
+                    conn.commit()
                     return True
 
         except Exception as e:
@@ -129,26 +135,28 @@ class TimescaleDBStorage(DataStorageBase):
             # Use 'latest' as default version
             version = version or 'latest'
             
+            schema = self.config.get('schema', 'public')
+            
             with self._get_connection() as conn:
                 with conn.cursor() as cur:
                     # Insert dataset if not exists
-                    cur.execute("""
-                        INSERT INTO datasets (name)
+                    cur.execute(f"""
+                        INSERT INTO {schema}.datasets (name)
                         VALUES (%s)
                         ON CONFLICT (name) DO NOTHING;
                     """, (dataset_name,))
                     
                     # Insert version if not exists
-                    cur.execute("""
-                        INSERT INTO dataset_versions (dataset_name, version)
+                    cur.execute(f"""
+                        INSERT INTO {schema}.dataset_versions (dataset_name, version)
                         VALUES (%s, %s)
                         ON CONFLICT (dataset_name, version) DO NOTHING;
                     """, (dataset_name, version))
                     
                     # Insert market data
                     for _, row in data.iterrows():
-                        cur.execute("""
-                            INSERT INTO market_data (
+                        cur.execute(f"""
+                            INSERT INTO {schema}.market_data (
                                 dataset_name, version, ticker, date,
                                 open, high, low, close, volume
                             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -164,67 +172,77 @@ class TimescaleDBStorage(DataStorageBase):
                             row['open'], row['high'], row['low'], row['close'], row['volume']
                         ))
                     
+                    conn.commit()
                     return True
                     
         except Exception as e:
             self.logger.error(f"Error saving data to TimescaleDB: {str(e)}")
             return False
     
-    def load_data(self,
-                 dataset_name: str,
-                 tickers: Optional[List[str]] = None,
-                 start_date: Optional[datetime] = None,
-                 end_date: Optional[datetime] = None,
-                 version: Optional[str] = None) -> pd.DataFrame:
-        """Load market data from TimescaleDB.
+    def load_data(self, dataset_name: str, version: Optional[str] = None) -> pd.DataFrame:
+        """Load data from TimescaleDB.
         
         Args:
-            dataset_name: Name/identifier for the dataset
-            tickers: Optional list of ticker symbols to load
-            start_date: Optional start date for filtering
-            end_date: Optional end date for filtering
-            version: Optional version to load
+            dataset_name: Name of the dataset to load
+            version: Optional version to load (defaults to 'latest')
             
         Returns:
-            DataFrame containing the requested market data
+            DataFrame with the loaded data
         """
-        try:
-            with self._get_connection() as conn:
-                # Build query conditions
-                conditions = ["dataset_name = %s"]
-                params = [dataset_name]
-                
-                if version:
-                    conditions.append("version = %s")
-                    params.append(version)
-                else:
-                    conditions.append("version IS NULL")
-                    
-                if tickers:
-                    conditions.append("ticker = ANY(%s)")
-                    params.append(tickers)
-                    
-                if start_date:
-                    conditions.append("date >= %s")
-                    params.append(start_date)
-                    
-                if end_date:
-                    conditions.append("date <= %s")
-                    params.append(end_date)
-                    
-                # Build and execute query
-                query = f"""
-                    SELECT ticker, date, open, high, low, close, volume
-                    FROM market_data
-                    WHERE {' AND '.join(conditions)}
-                    ORDER BY date, ticker;
-                """
-                
-                return pd.read_sql_query(query, conn, params=params)
-                
-        except Exception as e:
-            self.logger.error(f"Error loading data from TimescaleDB: {str(e)}")
-            return pd.DataFrame()
+        if version is None:
+            version = 'latest'
+            
+        schema = self.config.get('schema', 'public')
+            
+        with self._get_connection() as conn:
+            # Load data with proper ordering
+            query = f"""
+                SELECT t.ticker, t.date::timestamp without time zone as date,
+                       t.open, t.high, t.low, t.close, t.volume
+                FROM {schema}.market_data t
+                WHERE t.dataset_name = %s AND t.version = %s
+                ORDER BY t.ticker, t.date
+            """
+            
+            df = pd.read_sql_query(query, conn, params=(dataset_name, version))
+            return df.sort_values(['ticker', 'date']).reset_index(drop=True)
+            
+    def _get_dataset_id(self, cur, dataset_name: str) -> Optional[int]:
+        """Get dataset ID from name.
+        
+        Args:
+            cur: Database cursor
+            dataset_name: Name of the dataset
+            
+        Returns:
+            Dataset ID or None if not found
+        """
+        query = f"""
+            SELECT id FROM {self.config.get('schema', 'public')}.datasets
+            WHERE name = %s
+        """
+        cur.execute(query, (dataset_name,))
+        result = cur.fetchone()
+        return result[0] if result else None
+        
+    def _get_version_id(self, cur, dataset_id: int, version: str) -> Optional[int]:
+        """Get version ID from dataset ID and version name.
+        
+        Args:
+            cur: Database cursor
+            dataset_id: ID of the dataset
+            version: Version name
+            
+        Returns:
+            Version ID or None if not found
+        """
+        query = f"""
+            SELECT id FROM {self.config.get('schema', 'public')}.dataset_versions
+            WHERE dataset_id = %s AND version = %s
+        """
+        cur.execute(query, (dataset_id, version))
+        result = cur.fetchone()
+        return result[0] if result else None
     
     def delete_data(self,
                    dataset_name: str,
@@ -239,73 +257,83 @@ class TimescaleDBStorage(DataStorageBase):
             True if deletion successful, False otherwise
         """
         try:
+            schema = self.config.get('schema', 'public')
+            
             with self._get_connection() as conn:
                 with conn.cursor() as cur:
                     if version:
                         # Delete specific version
-                        cur.execute("""
-                            DELETE FROM market_data
+                        cur.execute(f"""
+                            DELETE FROM {schema}.market_data
                             WHERE dataset_name = %s AND version = %s;
                             
-                            DELETE FROM dataset_versions
+                            DELETE FROM {schema}.dataset_versions
                             WHERE dataset_name = %s AND version = %s;
                         """, (dataset_name, version, dataset_name, version))
                     else:
-                        # Delete all versions and dataset
-                        cur.execute("""
-                            DELETE FROM market_data
+                        # Delete all versions
+                        cur.execute(f"""
+                            DELETE FROM {schema}.market_data
                             WHERE dataset_name = %s;
                             
-                            DELETE FROM dataset_versions
+                            DELETE FROM {schema}.dataset_versions
                             WHERE dataset_name = %s;
                             
-                            DELETE FROM datasets
+                            DELETE FROM {schema}.datasets
                             WHERE name = %s;
                         """, (dataset_name, dataset_name, dataset_name))
-                        
-                conn.commit()
-                return True
-                
+                    
+                    conn.commit()
+                    return True
+                    
         except Exception as e:
             self.logger.error(f"Error deleting data from TimescaleDB: {str(e)}")
             return False
     
     def list_datasets(self) -> List[str]:
-        """List all available datasets in TimescaleDB.
+        """List all available datasets.
         
         Returns:
-            List of dataset names/identifiers
+            List of dataset names
         """
         try:
+            schema = self.config.get('schema', 'public')
+            
             with self._get_connection() as conn:
                 with conn.cursor() as cur:
-                    cur.execute("SELECT name FROM datasets ORDER BY name;")
+                    cur.execute(f"""
+                        SELECT name FROM {schema}.datasets
+                        ORDER BY name;
+                    """)
+                    
                     return [row[0] for row in cur.fetchall()]
                     
         except Exception as e:
-            self.logger.error(f"Error listing datasets from TimescaleDB: {str(e)}")
+            self.logger.error(f"Error listing datasets: {str(e)}")
             return []
     
     def get_versions(self, dataset_name: str) -> List[str]:
         """Get available versions for a dataset.
         
         Args:
-            dataset_name: Name/identifier for the dataset
+            dataset_name: Name of the dataset
             
         Returns:
             List of version identifiers
         """
         try:
+            schema = self.config.get('schema', 'public')
+            
             with self._get_connection() as conn:
                 with conn.cursor() as cur:
-                    cur.execute("""
-                        SELECT version
-                        FROM dataset_versions
+                    cur.execute(f"""
+                        SELECT version FROM {schema}.dataset_versions
                         WHERE dataset_name = %s
                         ORDER BY version;
                     """, (dataset_name,))
+                    
                     return [row[0] for row in cur.fetchall()]
                     
         except Exception as e:
-            self.logger.error(f"Error getting versions from TimescaleDB: {str(e)}")
+            self.logger.error(f"Error getting versions: {str(e)}")
             return []

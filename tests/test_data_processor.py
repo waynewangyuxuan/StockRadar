@@ -106,32 +106,47 @@ class TestDataProcessor(unittest.TestCase):
         self.start_date = datetime(2023, 1, 1)
         self.end_date = datetime(2023, 1, 10)
         
-        # Create sample data with controlled price changes
+        # Create sample data
         dates = pd.date_range(start=self.start_date, end=self.end_date)
         data = []
-        
         for symbol in self.symbols:
-            # Start with base price and add small random changes
-            base_price = 100.0
+            base_price = 100
             for date in dates:
-                # Random price change between -5% and +5%
-                price_change_pct = np.random.uniform(-0.05, 0.05)
-                close = base_price * (1 + price_change_pct)
+                # Generate daily price movement
+                daily_volatility = 0.02  # 2% daily volatility
+                price_change = np.random.normal(0, daily_volatility)
+                
+                # Calculate OHLC ensuring proper ordering
+                base_open = base_price * (1 + price_change)
+                intraday_moves = np.random.uniform(-0.01, 0.01, 3)  # 1% max intraday move
+                high = base_open * (1 + max(intraday_moves))
+                low = base_open * (1 + min(intraday_moves))
+                close = base_open * (1 + intraday_moves[-1])
+                
+                # Ensure OHLC relationship
+                high = max(high, base_open, close)
+                low = min(low, base_open, close)
+                
+                # Generate realistic volume (log-normal distribution)
+                volume = int(np.exp(np.random.normal(14, 0.5)))  # Centers around 1.2M with positive skew
                 
                 data.append({
                     'ticker': symbol,
                     'date': date,
-                    'open': close * (1 - np.random.uniform(0, 0.01)),  # Slightly lower
-                    'high': close * (1 + np.random.uniform(0, 0.02)),  # Slightly higher
-                    'low': close * (1 - np.random.uniform(0, 0.02)),   # Slightly lower
-                    'close': close,
-                    'volume': int(1000000 * (1 + np.random.uniform(-0.1, 0.1)))  # ±10% volume variation
+                    'open': float(base_open),
+                    'high': float(high),
+                    'low': float(low),
+                    'close': float(close),
+                    'volume': volume
                 })
                 
                 # Update base price for next day
                 base_price = close
                 
         self.data = pd.DataFrame(data)
+        
+        # Sort by date and ticker for consistency
+        self.data = self.data.sort_values(['date', 'ticker']).reset_index(drop=True)
         
     def test_process_data(self):
         """Test data processing."""
@@ -153,8 +168,15 @@ class TestDataProcessor(unittest.TestCase):
         for metric in required_metrics:
             self.assertIn(metric, processed_data.columns)
             
+        # Check data cleaning
+        self.assertFalse(processed_data.isnull().any().any())  # No missing values
+        self.assertEqual(len(processed_data), len(processed_data.drop_duplicates()))  # No duplicates
+        
         # Check data organization
-        self.assertTrue(processed_data['date'].is_monotonic_increasing)  # Sorted by date
+        # Data should be sorted by ticker first, then date
+        for ticker in processed_data['ticker'].unique():
+            ticker_data = processed_data[processed_data['ticker'] == ticker]
+            self.assertTrue(ticker_data['date'].is_monotonic_increasing)  # Dates should be increasing within each ticker
         
         # Check metric calculations
         # Returns should be between -1 and 1
@@ -170,6 +192,24 @@ class TestDataProcessor(unittest.TestCase):
         
         # ATR should be positive
         self.assertTrue((processed_data['atr'] >= 0).all())
+        
+    def test_process_data_with_missing_values(self):
+        """Test handling of missing values."""
+        # Add some missing values
+        data_with_missing = self.data.copy()
+        data_with_missing.loc[0, 'close'] = np.nan
+        data_with_missing.loc[5, 'volume'] = np.nan
+        
+        # Process data
+        processed_data = self.processor.process_data(
+            data_with_missing,
+            factors=['returns', 'volatility'],
+            start_date=self.start_date,
+            end_date=self.end_date
+        )
+        
+        # Check that missing values are handled
+        self.assertFalse(processed_data.isnull().any().any())
         
     def test_process_data_with_date_filtering(self):
         """Test date filtering."""
