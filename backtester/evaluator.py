@@ -17,11 +17,13 @@ from core.strategy_base import StrategyBase
 @dataclass
 class EvaluationResult:
     """Results of strategy evaluation."""
-    metrics: Dict[str, Any]
     equity_curve: pd.DataFrame
     drawdown_curve: pd.DataFrame
-    trade_summary: pd.DataFrame
-    position_summary: pd.DataFrame
+    trades: List[Dict]
+    metrics: Dict[str, float]
+    signals: pd.DataFrame
+    positions: pd.DataFrame
+    portfolio_values: pd.DataFrame
 
 class StrategyEvaluator:
     """
@@ -57,6 +59,19 @@ class StrategyEvaluator:
         Returns:
             EvaluationResult containing equity curve, drawdowns, trades and metrics
         """
+        if data.empty:
+            raise ValueError("Empty data provided")
+            
+        # Check for required columns
+        required_columns = ['open', 'high', 'low', 'close', 'volume']
+        missing_columns = [col for col in required_columns if col not in data.columns]
+        if missing_columns:
+            raise KeyError(f"Missing required columns: {missing_columns}")
+            
+        # Check for multi-index
+        if not isinstance(data.index, pd.MultiIndex):
+            raise ValueError("Data must have a multi-index with 'date' and 'ticker' levels")
+            
         # Generate signals
         signals = self.strategy.generate_signals(data)
         
@@ -65,12 +80,12 @@ class StrategyEvaluator:
         portfolio_values = self._calculate_portfolio_values(positions, data)
         
         # Calculate equity curve and drawdowns
-        equity_curve = self._calculate_equity_curve(portfolio_values)
-        drawdown_curve = self._calculate_drawdowns(equity_curve)
+        equity_curve = pd.DataFrame(portfolio_values['value'])
+        drawdown_curve = pd.DataFrame(self._calculate_drawdowns(portfolio_values['value']))
         
         # Extract trades and calculate metrics
         trades = self._extract_trades(positions, data)
-        metrics = self._calculate_metrics(equity_curve, trades)
+        metrics = self._calculate_metrics(portfolio_values['value'], trades)
         
         return EvaluationResult(
             equity_curve=equity_curve,
@@ -84,12 +99,13 @@ class StrategyEvaluator:
     
     def _calculate_positions(self, signals: pd.DataFrame, data: pd.DataFrame) -> pd.DataFrame:
         """Calculate position sizes based on signals."""
-        # Initialize positions DataFrame
-        positions = pd.DataFrame(0, index=signals.index, columns=signals.columns)
+        # Initialize positions DataFrame with same index as signals
+        positions = pd.DataFrame(0, index=signals.index, columns=['position'])
         
         # Convert signals to positions (-1, 0, 1)
-        positions[signals > 0] = 1
-        positions[signals < 0] = -1
+        signal_values = signals['signal'].astype(int)
+        positions.loc[signal_values > 0, 'position'] = 1
+        positions.loc[signal_values < 0, 'position'] = -1
         
         return positions
     
@@ -99,16 +115,20 @@ class StrategyEvaluator:
         returns = data['close'].pct_change()
         
         # Calculate position returns
-        position_returns = positions.shift(1) * returns
+        position_returns = positions['position'].shift(1) * returns
         
         # Calculate portfolio values
-        portfolio_values = (1 + position_returns).cumprod() * self.initial_capital
+        portfolio_values = pd.DataFrame(index=positions.index)
+        portfolio_values['value'] = (1 + position_returns).cumprod() * self.initial_capital
+        
+        # Fill NaN values with initial capital
+        portfolio_values['value'] = portfolio_values['value'].fillna(self.initial_capital)
         
         return portfolio_values
     
     def _calculate_equity_curve(self, portfolio_values: pd.DataFrame) -> pd.Series:
         """Calculate equity curve from portfolio values."""
-        return portfolio_values.sum(axis=1)
+        return portfolio_values['value']
     
     def _calculate_drawdowns(self, equity_curve: pd.Series) -> pd.Series:
         """Calculate drawdown series from equity curve."""
@@ -119,17 +139,22 @@ class StrategyEvaluator:
     def _extract_trades(self, positions: pd.DataFrame, data: pd.DataFrame) -> List[Dict]:
         """Extract individual trades from position changes."""
         trades = []
-        position_changes = positions.diff()
+        position_changes = positions['position'].diff()
         
-        for ticker in positions.columns:
+        # Group by ticker to handle trades for each ticker separately
+        for ticker in data.index.get_level_values('ticker').unique():
+            ticker_mask = data.index.get_level_values('ticker') == ticker
+            ticker_positions = positions.loc[ticker_mask]
+            ticker_changes = position_changes.loc[ticker_mask]
+            
             # Find entry and exit points
-            entries = position_changes[ticker][position_changes[ticker] != 0].index
+            entries = ticker_changes[ticker_changes != 0].index
             
             for i in range(len(entries) - 1):
                 entry_date = entries[i]
                 exit_date = entries[i + 1]
                 
-                position_size = positions.loc[entry_date, ticker]
+                position_size = ticker_positions.loc[entry_date, 'position']
                 if position_size == 0:  # Skip if no position taken
                     continue
                     
@@ -160,7 +185,7 @@ class StrategyEvaluator:
         
         # Basic metrics
         total_return = (equity_curve.iloc[-1] / equity_curve.iloc[0] - 1) * 100
-        sharpe_ratio = np.sqrt(252) * returns.mean() / returns.std()
+        sharpe_ratio = np.sqrt(252) * returns.mean() / returns.std() if len(returns) > 1 else 0
         max_drawdown = self._calculate_drawdowns(equity_curve).min() * 100
         
         # Trade metrics
@@ -173,14 +198,14 @@ class StrategyEvaluator:
         avg_loss = np.mean([t['return_pct'] for t in trades if t['pnl'] < 0]) if (total_trades - win_trades) > 0 else 0
         
         metrics = {
-            'total_return': total_return,
-            'sharpe_ratio': sharpe_ratio,
-            'max_drawdown': max_drawdown,
-            'win_rate': win_rate,
+            'total_return': float(total_return),
+            'sharpe_ratio': float(sharpe_ratio),
+            'max_drawdown': float(max_drawdown),
+            'win_rate': float(win_rate),
             'total_trades': total_trades,
-            'avg_return': avg_return,
-            'avg_win': avg_win,
-            'avg_loss': avg_loss
+            'avg_return': float(avg_return),
+            'avg_win': float(avg_win),
+            'avg_loss': float(avg_loss)
         }
         
         return metrics

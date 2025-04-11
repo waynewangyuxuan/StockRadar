@@ -248,35 +248,41 @@ class PerformanceMetrics:
             )
         
         # Calculate position sizes
-        position_sizes = [abs(pos.quantity * pos.current_price) for pos in positions.values()]
-        total_position_value = sum(position_sizes)
+        position_sizes = [abs(pos['quantity'] * pos['current_price']) for pos in positions.values()]
+        total_position_size = sum(position_sizes)
         
-        # Calculate average position size
-        avg_position_size = np.mean(position_sizes) if position_sizes else 0.0
+        # Calculate average and max position size
+        avg_position_size = total_position_size / len(positions)
+        max_position_size = max(position_sizes)
         
-        # Calculate position turnover
-        total_trade_value = sum(abs(trade['value']) for trade in trades)
-        position_turnover = total_trade_value / total_position_value if total_position_value > 0 else 0.0
-        
-        # Calculate average holding period
-        if trades:
-            trades_df = pd.DataFrame(trades)
-            trades_df['timestamp'] = pd.to_datetime(trades_df['timestamp'])
-            avg_holding_period = (trades_df['timestamp'].max() - trades_df['timestamp'].min()).total_seconds() / len(trades)
-        else:
-            avg_holding_period = 0.0
-        
-        # Calculate maximum position size
-        max_position_size = max(position_sizes) if position_sizes else 0.0
-        
-        # Calculate position concentration (Herfindahl index)
-        position_weights = [size / total_position_value for size in position_sizes]
+        # Calculate position concentration (Herfindahl-Hirschman Index)
+        position_weights = [size / total_position_size for size in position_sizes]
         position_concentration = sum(w * w for w in position_weights)
         
+        # Calculate position turnover
+        if not trades:
+            position_turnover = 0.0
+        else:
+            trade_values = sum(abs(trade['value']) for trade in trades)
+            avg_portfolio_value = total_position_size  # Simplified assumption
+            position_turnover = trade_values / (2 * avg_portfolio_value)  # Divide by 2 to avoid double counting
+        
+        # Calculate average holding period
+        if not trades:
+            avg_holding_period = 0.0
+        else:
+            trade_dates = [pd.to_datetime(trade['timestamp']) for trade in trades]
+            if len(trade_dates) > 1:
+                holding_periods = [(trade_dates[i+1] - trade_dates[i]).days 
+                                 for i in range(len(trade_dates)-1)]
+                avg_holding_period = sum(holding_periods) / len(holding_periods)
+            else:
+                avg_holding_period = 0.0
+        
         return PositionMetrics(
-            avg_position_size=avg_position_size,
-            position_turnover=position_turnover,
-            avg_holding_period=avg_holding_period,
-            max_position_size=max_position_size,
-            position_concentration=position_concentration
+            avg_position_size=float(avg_position_size),
+            position_turnover=float(position_turnover),
+            avg_holding_period=float(avg_holding_period),
+            max_position_size=float(max_position_size),
+            position_concentration=float(position_concentration)
         )

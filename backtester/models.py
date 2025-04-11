@@ -1,14 +1,18 @@
+"""
+Data models for backtesting results.
+"""
+
 from dataclasses import dataclass
-from typing import Dict, List, Optional
 import pandas as pd
+from typing import Dict, List, Any
 
 @dataclass
 class EvaluationResult:
-    """Data class to store backtesting results."""
-    equity_curve: pd.Series
-    drawdown_curve: pd.Series
-    trades: List[Dict]
+    """Results of strategy evaluation."""
+    equity_curve: pd.DataFrame
+    drawdown_curve: pd.DataFrame
+    trades: List[Dict[str, Any]]
     metrics: Dict[str, float]
-    signals: Optional[pd.DataFrame] = None
-    positions: Optional[pd.DataFrame] = None
-    portfolio_values: Optional[pd.DataFrame] = None 
+    signals: pd.DataFrame
+    positions: pd.DataFrame
+    portfolio_values: pd.DataFrame 

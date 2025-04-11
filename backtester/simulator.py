@@ -107,6 +107,11 @@ class BacktestSimulator:
         # Sort by date to ensure chronological processing
         market_data = market_data.sort_index()
         
+        # Record initial state
+        if not market_data.empty:
+            first_date = market_data.index.get_level_values('date')[0]
+            self._record_portfolio_state(pd.Timestamp(first_date))
+        
         # Process each timestamp
         for date in market_data.index.get_level_values('date').unique():
             # Get data for current timestamp
@@ -120,7 +125,10 @@ class BacktestSimulator:
             
             # Update positions and portfolio value
             self._update_positions(current_data)
-            self._record_portfolio_state(date)
+            
+            # Record state (skip first date as it was already recorded)
+            if pd.Timestamp(date) != pd.Timestamp(first_date):
+                self._record_portfolio_state(date)
         
         # Calculate final results
         return self._calculate_results()
@@ -178,16 +186,25 @@ class BacktestSimulator:
         Args:
             order: Order to execute
             current_price: Current market price
+            
+        Raises:
+            ValueError: If order quantity is zero or insufficient capital
         """
-        # Apply slippage
+        # Validate order
+        if order.quantity <= 0:
+            raise ValueError("Order quantity must be positive")
+            
+        # Calculate trade value and check capital
         execution_price = current_price * (1 + self.slippage * order.side)
-        
-        # Calculate transaction cost
         trade_value = execution_price * order.quantity
         transaction_cost = trade_value * self.transaction_cost
+        total_cost = (trade_value + transaction_cost) * order.side
+        
+        if self.current_capital < total_cost:
+            raise ValueError("Insufficient capital for trade")
         
         # Update capital
-        self.current_capital -= (trade_value + transaction_cost) * order.side
+        self.current_capital -= total_cost
         
         # Update position
         if order.ticker not in self.positions:
@@ -201,14 +218,21 @@ class BacktestSimulator:
             )
         else:
             position = self.positions[order.ticker]
-            # Update average price
-            total_quantity = position.quantity + (order.quantity * order.side)
-            if total_quantity != 0:
+            old_quantity = position.quantity
+            new_quantity = old_quantity + (order.quantity * order.side)
+            
+            if new_quantity == 0:
+                # Position is closed
+                del self.positions[order.ticker]
+            else:
+                # Update average price for the position
                 position.average_price = (
-                    (position.quantity * position.average_price) +
+                    (old_quantity * position.average_price) +
                     (order.quantity * order.side * execution_price)
-                ) / total_quantity
-            position.quantity = total_quantity
+                ) / new_quantity
+                position.quantity = new_quantity
+                position.current_price = execution_price
+                position.unrealized_pnl = position.quantity * (execution_price - position.average_price)
         
         # Record trade
         self.trades.append({
@@ -247,12 +271,11 @@ class BacktestSimulator:
         Args:
             timestamp: Current timestamp
         """
-        # Calculate total portfolio value
-        position_value = sum(
-            pos.quantity * pos.current_price
+        # Calculate total portfolio value (capital + unrealized PnL)
+        total_value = self.current_capital + sum(
+            pos.unrealized_pnl
             for pos in self.positions.values()
         )
-        total_value = self.current_capital + position_value
         
         self.portfolio_value.append(total_value)
         self.timestamps.append(timestamp)
@@ -264,30 +287,93 @@ class BacktestSimulator:
         Returns:
             Dictionary containing backtest results
         """
+        if not self.portfolio_value:
+            return {
+                'initial_capital': self.initial_capital,
+                'final_capital': self.current_capital,
+                'total_return': 0.0,
+                'annual_return': 0.0,
+                'max_drawdown': 0.0,
+                'num_trades': 0,
+                'portfolio_value': [self.initial_capital],
+                'timestamps': self.timestamps,
+                'trades': [],
+                'positions': {},
+                'metrics': {
+                    'sharpe_ratio': 0.0,
+                    'sortino_ratio': 0.0,
+                    'win_rate': 0.0,
+                    'profit_factor': 0.0,
+                    'max_drawdown_duration': 0
+                }
+            }
+            
         # Convert to numpy arrays for calculations
         portfolio_values = np.array(self.portfolio_value)
         timestamps = np.array(self.timestamps)
         
         # Calculate returns
-        returns = np.diff(portfolio_values) / portfolio_values[:-1]
+        returns = np.diff(portfolio_values) / portfolio_values[:-1] if len(portfolio_values) > 1 else np.array([0.0])
         
         # Calculate metrics
         total_return = (portfolio_values[-1] / self.initial_capital) - 1
-        annual_return = total_return * (252 / len(returns))  # Assuming daily data
+        annual_return = total_return * (252 / max(1, len(returns)))  # Assuming daily data
         
         # Calculate drawdown
         peak = np.maximum.accumulate(portfolio_values)
         drawdown = (portfolio_values - peak) / peak
+        max_drawdown = drawdown.min()
+        
+        # Calculate additional metrics
+        daily_returns = returns
+        excess_returns = daily_returns - 0.02/252  # Assuming 2% risk-free rate
+        
+        # Sharpe ratio (annualized)
+        sharpe_ratio = np.sqrt(252) * np.mean(excess_returns) / np.std(daily_returns) if len(daily_returns) > 1 else 0
+        
+        # Sortino ratio
+        negative_returns = daily_returns[daily_returns < 0]
+        downside_std = np.std(negative_returns) if len(negative_returns) > 0 else 0
+        sortino_ratio = np.sqrt(252) * np.mean(excess_returns) / downside_std if downside_std > 0 else 0
+        
+        # Win rate and profit factor
+        profitable_trades = [t for t in self.trades if t['value'] * t['side'] > 0]
+        win_rate = len(profitable_trades) / len(self.trades) if self.trades else 0
+        
+        gross_profits = sum(t['value'] * t['side'] for t in profitable_trades)
+        losing_trades = [t for t in self.trades if t['value'] * t['side'] <= 0]
+        gross_losses = abs(sum(t['value'] * t['side'] for t in losing_trades))
+        profit_factor = gross_profits / gross_losses if gross_losses > 0 else float('inf') if gross_profits > 0 else 0
+        
+        # Max drawdown duration
+        max_dd_duration = 0
+        curr_dd_duration = 0
+        peak_idx = 0
+        
+        for i in range(len(portfolio_values)):
+            if portfolio_values[i] >= peak[:i+1].max():
+                peak_idx = i
+                curr_dd_duration = 0
+            else:
+                curr_dd_duration = i - peak_idx
+                max_dd_duration = max(max_dd_duration, curr_dd_duration)
         
         return {
             'initial_capital': self.initial_capital,
             'final_capital': portfolio_values[-1],
             'total_return': total_return,
             'annual_return': annual_return,
-            'max_drawdown': drawdown.min(),
+            'max_drawdown': max_drawdown,
             'num_trades': len(self.trades),
-            'portfolio_values': portfolio_values,
-            'timestamps': timestamps,
+            'portfolio_value': portfolio_values.tolist(),
+            'timestamps': timestamps.tolist(),
             'trades': self.trades,
-            'positions': self.positions
+            'positions': self.positions,
+            'metrics': {
+                'sharpe_ratio': float(sharpe_ratio),
+                'sortino_ratio': float(sortino_ratio),
+                'win_rate': float(win_rate),
+                'profit_factor': float(profit_factor),
+                'max_drawdown_duration': int(max_dd_duration)
+            }
         }

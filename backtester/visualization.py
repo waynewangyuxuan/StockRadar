@@ -219,6 +219,26 @@ class BacktestVisualizer:
             plt.savefig(os.path.join(self.output_dir, 'equity_curve.png'))
         self._show_or_close(save)
     
+    def plot_drawdown_curve(self, result: EvaluationResult, save: bool = True) -> None:
+        """
+        Plot drawdown curve.
+        
+        Args:
+            result: EvaluationResult containing drawdown curve
+            save: Whether to save the plot to file
+        """
+        plt.figure(figsize=(12, 6))
+        result.drawdown_curve.plot(color='red', label='Drawdown')
+        plt.title('Drawdown Curve')
+        plt.xlabel('Date')
+        plt.ylabel('Drawdown %')
+        plt.grid(True)
+        plt.legend()
+        
+        if save:
+            plt.savefig(os.path.join(self.output_dir, 'drawdown_curve.png'))
+        self._show_or_close(save)
+    
     def plot_trade_distribution(self, result: EvaluationResult, save: bool = True) -> None:
         """
         Plot trade return distribution.
@@ -252,9 +272,13 @@ class BacktestVisualizer:
             result: EvaluationResult containing equity curve
             save: Whether to save the plot to file
         """
+        # Reset index to get date as a column
+        equity_curve = result.equity_curve.reset_index()
+        equity_curve['date'] = pd.to_datetime(equity_curve['date'])
+        
         # Calculate monthly returns
-        monthly_returns = result.equity_curve.resample('M').last().pct_change() * 100
-        monthly_returns_matrix = monthly_returns.groupby([monthly_returns.index.year, monthly_returns.index.month]).first().unstack()
+        monthly_returns = equity_curve.groupby([equity_curve['date'].dt.year, equity_curve['date'].dt.month])['value'].last().pct_change() * 100
+        monthly_returns_matrix = monthly_returns.unstack()
         
         plt.figure(figsize=(12, 8))
         sns.heatmap(monthly_returns_matrix, annot=True, fmt='.1f', center=0, cmap='RdYlGn')
@@ -266,22 +290,22 @@ class BacktestVisualizer:
             plt.savefig(os.path.join(self.output_dir, 'monthly_returns.png'))
         self._show_or_close(save)
     
-    def plot_position_concentration(self, evaluation_result: EvaluationResult, save: bool = True) -> None:
+    def plot_position_concentration(self, result: EvaluationResult, save: bool = True) -> None:
         """
         Plot position concentration.
         
         Args:
-            evaluation_result: EvaluationResult object
-            save: Whether to save the plot
+            result: EvaluationResult containing positions
+            save: Whether to save the plot to file
         """
-        if evaluation_result.position_summary.empty:
+        if result.positions.empty:
             print("No positions to plot")
             return
         
         plt.figure(figsize=(12, 6))
         
-        # Plot position concentration
-        position_values = evaluation_result.position_summary['position_value']
+        # Calculate position concentration
+        position_values = result.positions['position'].value_counts()
         position_values = position_values / position_values.sum() * 100
         
         plt.pie(
@@ -291,32 +315,33 @@ class BacktestVisualizer:
             startangle=90
         )
         
-        # Add title
         plt.title('Position Concentration')
         
         if save:
             plt.savefig(os.path.join(self.output_dir, 'position_concentration.png'))
-            plt.close()
-        else:
-            plt.show()
+        self._show_or_close(save)
     
-    def plot_performance_dashboard(self, evaluation_result: EvaluationResult, save: bool = True) -> None:
+    def plot_performance_dashboard(self, result: EvaluationResult, save: bool = True) -> None:
         """
         Plot a comprehensive performance dashboard.
         
         Args:
-            evaluation_result: EvaluationResult object
+            result: EvaluationResult containing all results
             save: Whether to save the plot
         """
         # Create figure with subplots
         fig = plt.figure(figsize=(15, 10))
         gs = fig.add_gridspec(3, 2)
         
+        # Reset index to get date as a column
+        equity_curve = result.equity_curve.reset_index()
+        equity_curve['date'] = pd.to_datetime(equity_curve['date'])
+        
         # Equity curve
         ax1 = fig.add_subplot(gs[0, :])
         ax1.plot(
-            evaluation_result.equity_curve.index,
-            evaluation_result.equity_curve['portfolio_value'],
+            equity_curve['date'].unique(),
+            equity_curve.groupby('date')['value'].sum(),
             label='Portfolio Value'
         )
         ax1.set_title('Equity Curve')
@@ -325,11 +350,15 @@ class BacktestVisualizer:
         ax1.grid(True)
         ax1.legend()
         
+        # Reset index for drawdown curve
+        drawdown_curve = result.drawdown_curve.reset_index()
+        drawdown_curve['date'] = pd.to_datetime(drawdown_curve['date'])
+        
         # Drawdown curve
         ax2 = fig.add_subplot(gs[1, :])
         ax2.plot(
-            evaluation_result.drawdown_curve.index,
-            evaluation_result.drawdown_curve['drawdown'] * 100,
+            drawdown_curve['date'].unique(),
+            drawdown_curve.groupby('date')['value'].sum(),
             label='Drawdown',
             color='red'
         )
@@ -341,21 +370,17 @@ class BacktestVisualizer:
         
         # Trade distribution
         ax3 = fig.add_subplot(gs[2, 0])
-        if not evaluation_result.trade_summary.empty:
-            sns.histplot(
-                evaluation_result.trade_summary['total_pnl'],
-                bins=20,
-                kde=True,
-                ax=ax3
-            )
-        ax3.set_title('Trade P&L Distribution')
-        ax3.set_xlabel('P&L')
+        if result.trades:
+            returns = [trade['return_pct'] for trade in result.trades]
+            sns.histplot(returns, bins=20, kde=True, ax=ax3)
+        ax3.set_title('Trade Return Distribution')
+        ax3.set_xlabel('Return %')
         ax3.set_ylabel('Frequency')
         
         # Position concentration
         ax4 = fig.add_subplot(gs[2, 1])
-        if not evaluation_result.position_summary.empty:
-            position_values = evaluation_result.position_summary['position_value']
+        if not result.positions.empty:
+            position_values = result.positions['position'].value_counts()
             position_values = position_values / position_values.sum() * 100
             ax4.pie(
                 position_values,
@@ -370,9 +395,7 @@ class BacktestVisualizer:
         
         if save:
             plt.savefig(os.path.join(self.output_dir, 'performance_dashboard.png'))
-            plt.close()
-        else:
-            plt.show()
+        self._show_or_close(save)
     
     def plot_price_action(self, result: EvaluationResult, price_data: pd.Series, save: bool = True) -> None:
         """
@@ -500,21 +523,25 @@ class BacktestVisualizer:
             plt.savefig(os.path.join(self.output_dir, 'volume_profile.png'))
         self._show_or_close(save)
     
-    def export_to_excel(self, result: EvaluationResult) -> None:
+    def export_to_excel(self, result: EvaluationResult, filename: str = "backtest_results.xlsx") -> str:
         """
         Export results to Excel file.
         
         Args:
             result: EvaluationResult containing all results
+            filename: Name of the Excel file
+            
+        Returns:
+            Path to the saved Excel file
         """
-        output_file = os.path.join(self.output_dir, 'backtest_results.xlsx')
+        output_file = os.path.join(self.output_dir, filename)
         
         with pd.ExcelWriter(output_file) as writer:
             # Write equity curve
-            pd.DataFrame({
-                'Portfolio Value': result.equity_curve,
-                'Drawdown': result.drawdown_curve
-            }).to_excel(writer, sheet_name='Equity Curve')
+            result.equity_curve.to_excel(writer, sheet_name='Equity Curve')
+            
+            # Write drawdown curve
+            result.drawdown_curve.to_excel(writer, sheet_name='Drawdown Curve')
             
             # Write trades
             pd.DataFrame(result.trades).to_excel(writer, sheet_name='Trades')
@@ -522,10 +549,10 @@ class BacktestVisualizer:
             # Write metrics
             pd.Series(result.metrics).to_excel(writer, sheet_name='Metrics')
             
-            # Write positions if available
-            if result.positions is not None:
-                result.positions.to_excel(writer, sheet_name='Positions')
+            # Write positions
+            result.positions.to_excel(writer, sheet_name='Positions')
             
-            # Write signals if available
-            if result.signals is not None:
-                result.signals.to_excel(writer, sheet_name='Signals') 
+            # Write signals
+            result.signals.to_excel(writer, sheet_name='Signals')
+        
+        return output_file 
