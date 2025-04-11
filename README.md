@@ -2,6 +2,11 @@
 
 A stock market data analysis and storage system with support for multiple storage backends.
 
+## TODO
+### Irrelated to Optimization (C++ rewriting)
+1. stratedy engine
+2. Clarify Entry point for `stratedy engine` and `backtester`
+
 ## Features
 
 - Multiple storage backends:
