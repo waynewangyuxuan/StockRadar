@@ -24,26 +24,36 @@ class MockStrategy(StrategyBase):
         return []  # No factors required for this mock strategy
     
     def generate_signals(self, market_data: pd.DataFrame, factor_data: Optional[pd.DataFrame] = None) -> pd.DataFrame:
-        """Generate mock trading signals."""
-        # Create signals DataFrame with required columns
-        signals = pd.DataFrame(index=market_data.index)
-        signals['signal'] = np.zeros(len(market_data), dtype=np.int8)
-        signals['signal_strength'] = np.zeros(len(market_data), dtype=np.float32)
-        signals['strategy_name'] = self.name
-        signals['timestamp'] = pd.Timestamp.now()
+        """Generate mock signals."""
+        # Ensure market data has proper index
+        if not isinstance(market_data.index, pd.MultiIndex):
+            market_data.index = pd.MultiIndex.from_product(
+                [market_data.index, ['GOOGL']],
+                names=['date', 'ticker']
+            )
         
-        # Generate some random signals
+        # Get unique dates and tickers
         dates = market_data.index.get_level_values('date').unique()
-        buy_dates = dates[1::4]  # Buy every 4th day
-        sell_dates = dates[3::4]  # Sell every 4th day
+        tickers = market_data.index.get_level_values('ticker').unique()
         
-        for date in buy_dates:
-            signals.loc[date, 'signal'] = SignalType.BUY.value
-            signals.loc[date, 'signal_strength'] = np.random.uniform(0.5, 1.0)
+        # Generate random signals
+        signals_data = []
+        for date in dates:
+            for ticker in tickers:
+                signal = int(np.random.choice([1, -1]))  # Buy or sell signal as int
+                signals_data.append({
+                    'date': date,
+                    'ticker': ticker,
+                    'signal': signal,
+                    'signal_strength': np.random.random(),
+                    'strategy_name': self.name,
+                    'timestamp': pd.Timestamp.now()
+                })
         
-        for date in sell_dates:
-            signals.loc[date, 'signal'] = SignalType.SELL.value
-            signals.loc[date, 'signal_strength'] = np.random.uniform(0.5, 1.0)
+        # Create signals DataFrame with proper index
+        signals = pd.DataFrame(signals_data)
+        signals.set_index(['date', 'ticker'], inplace=True)
+        signals['signal'] = signals['signal'].astype(int)  # Ensure int type
         
         return signals
 
@@ -127,10 +137,10 @@ class TestStrategyEvaluator:
         portfolio_values = evaluator._calculate_portfolio_values(positions, sample_data)
         equity_curve = evaluator._calculate_equity_curve(portfolio_values)
         
-        assert isinstance(equity_curve, pd.Series)
+        assert isinstance(equity_curve, pd.DataFrame)
         assert equity_curve.index.equals(sample_data.index)
-        assert equity_curve.iloc[0] == pytest.approx(evaluator.initial_capital)
-        assert all(equity_curve > 0)  # Equity should always be positive
+        assert equity_curve['value'].iloc[0] == pytest.approx(evaluator.initial_capital)
+        assert all(equity_curve['value'] > 0)  # Equity should always be positive
     
     def test_drawdown_calculation(self, evaluator, sample_data):
         """Test drawdown calculation."""
@@ -140,10 +150,10 @@ class TestStrategyEvaluator:
         equity_curve = evaluator._calculate_equity_curve(portfolio_values)
         drawdowns = evaluator._calculate_drawdowns(equity_curve)
         
-        assert isinstance(drawdowns, pd.Series)
+        assert isinstance(drawdowns, pd.DataFrame)
         assert drawdowns.index.equals(sample_data.index)
-        assert all(drawdowns <= 0)  # Drawdowns should always be negative or zero
-        assert drawdowns.min() >= -1  # Maximum drawdown cannot exceed -100%
+        assert all(drawdowns['value'] <= 0)  # Drawdowns should always be negative or zero
+        assert drawdowns['value'].min() >= -1  # Maximum drawdown cannot exceed -100%
     
     def test_trade_extraction(self, evaluator, sample_data):
         """Test trade extraction from positions."""
@@ -200,7 +210,7 @@ class TestStrategyEvaluator:
         with pytest.raises(ValueError):
             evaluator.evaluate(empty_data)
         
-        # Single day of data
+        # Single day of data - should work but with no returns
         single_day = pd.DataFrame({
             'open': [100],
             'high': [101],
@@ -208,12 +218,20 @@ class TestStrategyEvaluator:
             'close': [100],
             'volume': [1000]
         }, index=[datetime.now()])
-        with pytest.raises(ValueError):
-            evaluator.evaluate(single_day)
+        
+        # Set MultiIndex for single day data
+        single_day.index = pd.MultiIndex.from_product(
+            [single_day.index, ['GOOGL']],
+            names=['date', 'ticker']
+        )
+        
+        result = evaluator.evaluate(single_day)
+        assert result.metrics['total_return'] == 0
+        assert result.metrics['sharpe_ratio'] == 0
         
         # Missing columns
         invalid_data = pd.DataFrame({'close': [100, 101, 102]})
-        with pytest.raises(KeyError):
+        with pytest.raises(ValueError):
             evaluator.evaluate(invalid_data)
     
     def test_visualization_methods(self, evaluator, sample_data):

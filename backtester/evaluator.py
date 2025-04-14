@@ -7,46 +7,29 @@ based on backtesting results.
 
 import pandas as pd
 import numpy as np
-from typing import Dict, Any, List, Optional, Tuple
-from dataclasses import dataclass
+from typing import Dict, Any, List
 from datetime import datetime
-from .visualization import BacktestVisualizer
 from .models import EvaluationResult
-from core.strategy_base import StrategyBase
-
-@dataclass
-class EvaluationResult:
-    """Results of strategy evaluation."""
-    equity_curve: pd.DataFrame
-    drawdown_curve: pd.DataFrame
-    trades: List[Dict]
-    metrics: Dict[str, float]
-    signals: pd.DataFrame
-    positions: pd.DataFrame
-    portfolio_values: pd.DataFrame
+from .metrics import PerformanceMetrics
+from .visualization import BacktestVisualizer
+from strategy_engine.schema import StrategyInterface, DataSchema, SignalSchema
 
 class StrategyEvaluator:
     """
     Evaluates trading strategies based on backtesting results.
-    
-    This class provides methods to evaluate trading strategies, including:
-    - Performance analysis
-    - Risk assessment
-    - Trade analysis
-    - Position analysis
-    - Visualization
     """
     
-    def __init__(self, strategy: StrategyBase, initial_capital: float = 100000.0):
+    def __init__(self, strategy: StrategyInterface, initial_capital: float = 100000.0):
         """
         Initialize the strategy evaluator.
         
         Args:
-            strategy: The trading strategy
+            strategy: The trading strategy to evaluate
             initial_capital: Initial capital for the strategy
         """
         self.strategy = strategy
         self.initial_capital = initial_capital
+        self.metrics = PerformanceMetrics()
         self.visualizer = BacktestVisualizer()
     
     def evaluate(self, data: pd.DataFrame) -> EvaluationResult:
@@ -54,11 +37,12 @@ class StrategyEvaluator:
         Evaluate the strategy on historical data.
         
         Args:
-            data: DataFrame with OHLCV data and any required factor columns
+            data: DataFrame with OHLCV data
             
         Returns:
-            EvaluationResult containing equity curve, drawdowns, trades and metrics
+            EvaluationResult containing performance metrics and analysis
         """
+        # Validate data
         if data.empty:
             raise ValueError("Empty data provided")
             
@@ -66,13 +50,13 @@ class StrategyEvaluator:
         required_columns = ['open', 'high', 'low', 'close', 'volume']
         missing_columns = [col for col in required_columns if col not in data.columns]
         if missing_columns:
-            raise KeyError(f"Missing required columns: {missing_columns}")
+            raise ValueError(f"Missing required columns: {missing_columns}")
             
         # Check for multi-index
         if not isinstance(data.index, pd.MultiIndex):
-            raise ValueError("Data must have a multi-index with 'date' and 'ticker' levels")
+            raise ValueError("Data must have a MultiIndex with levels ['date', 'ticker']")
             
-        # Generate signals
+        # Get strategy signals
         signals = self.strategy.generate_signals(data)
         
         # Calculate positions and portfolio values
@@ -80,12 +64,14 @@ class StrategyEvaluator:
         portfolio_values = self._calculate_portfolio_values(positions, data)
         
         # Calculate equity curve and drawdowns
-        equity_curve = pd.DataFrame(portfolio_values['value'])
-        drawdown_curve = pd.DataFrame(self._calculate_drawdowns(portfolio_values['value']))
+        equity_curve = self._calculate_equity_curve(portfolio_values)
+        drawdown_curve = self._calculate_drawdowns(equity_curve)
         
-        # Extract trades and calculate metrics
+        # Extract trades
         trades = self._extract_trades(positions, data)
-        metrics = self._calculate_metrics(portfolio_values['value'], trades)
+        
+        # Calculate metrics
+        metrics = self.metrics.calculate(equity_curve, drawdown_curve, trades)
         
         return EvaluationResult(
             equity_curve=equity_curve,
@@ -98,19 +84,18 @@ class StrategyEvaluator:
         )
     
     def _calculate_positions(self, signals: pd.DataFrame, data: pd.DataFrame) -> pd.DataFrame:
-        """Calculate position sizes based on signals."""
-        # Initialize positions DataFrame with same index as signals
-        positions = pd.DataFrame(0, index=signals.index, columns=['position'])
-        
-        # Convert signals to positions (-1, 0, 1)
-        signal_values = signals['signal'].astype(int)
-        positions.loc[signal_values > 0, 'position'] = 1
-        positions.loc[signal_values < 0, 'position'] = -1
-        
+        """Calculate positions from signals."""
+        positions = pd.DataFrame(index=data.index)
+        positions['position'] = signals['signal'].astype(int)
         return positions
     
     def _calculate_portfolio_values(self, positions: pd.DataFrame, data: pd.DataFrame) -> pd.DataFrame:
-        """Calculate portfolio value over time based on positions."""
+        """Calculate portfolio values from positions."""
+        portfolio = pd.DataFrame(index=data.index)
+        
+        # Initialize with initial capital
+        portfolio['value'] = self.initial_capital
+        
         # Calculate returns based on close prices
         returns = data['close'].pct_change()
         
@@ -118,242 +103,203 @@ class StrategyEvaluator:
         position_returns = positions['position'].shift(1) * returns
         
         # Calculate portfolio values
-        portfolio_values = pd.DataFrame(index=positions.index)
-        portfolio_values['value'] = (1 + position_returns).cumprod() * self.initial_capital
+        portfolio['value'] = (1 + position_returns).cumprod() * self.initial_capital
         
         # Fill NaN values with initial capital
-        portfolio_values['value'] = portfolio_values['value'].fillna(self.initial_capital)
+        portfolio['value'] = portfolio['value'].fillna(self.initial_capital)
         
-        return portfolio_values
+        return portfolio
     
-    def _calculate_equity_curve(self, portfolio_values: pd.DataFrame) -> pd.Series:
+    def _calculate_equity_curve(self, portfolio_values: pd.DataFrame) -> pd.DataFrame:
         """Calculate equity curve from portfolio values."""
-        return portfolio_values['value']
+        equity_curve = pd.DataFrame(index=portfolio_values.index)
+        equity_curve['value'] = portfolio_values['value']
+        return equity_curve
     
-    def _calculate_drawdowns(self, equity_curve: pd.Series) -> pd.Series:
+    def _calculate_drawdowns(self, equity_curve: pd.DataFrame) -> pd.DataFrame:
         """Calculate drawdown series from equity curve."""
-        rolling_max = equity_curve.expanding().max()
-        drawdowns = (equity_curve - rolling_max) / rolling_max
+        drawdowns = pd.DataFrame(index=equity_curve.index)
+        rolling_max = equity_curve['value'].expanding().max()
+        drawdowns['value'] = (equity_curve['value'] - rolling_max) / rolling_max
         return drawdowns
     
-    def _extract_trades(self, positions: pd.DataFrame, data: pd.DataFrame) -> List[Dict]:
-        """Extract individual trades from position changes."""
+    def _extract_trades(self, positions: pd.DataFrame, data: pd.DataFrame) -> List[Dict[str, Any]]:
+        """Extract trades from position changes."""
         trades = []
         position_changes = positions['position'].diff()
         
-        # Group by ticker to handle trades for each ticker separately
+        # Group by ticker
         for ticker in data.index.get_level_values('ticker').unique():
             ticker_mask = data.index.get_level_values('ticker') == ticker
             ticker_positions = positions.loc[ticker_mask]
             ticker_changes = position_changes.loc[ticker_mask]
+            ticker_data = data.loc[ticker_mask]
             
             # Find entry and exit points
-            entries = ticker_changes[ticker_changes != 0].index
+            change_points = ticker_changes[ticker_changes != 0].index
             
-            for i in range(len(entries) - 1):
-                entry_date = entries[i]
-                exit_date = entries[i + 1]
+            for i in range(len(change_points) - 1):
+                entry_date = change_points[i]
+                exit_date = change_points[i + 1]
                 
-                position_size = ticker_positions.loc[entry_date, 'position']
-                if position_size == 0:  # Skip if no position taken
+                position = ticker_positions.loc[entry_date, 'position']
+                if position == 0:  # Skip if no position taken
                     continue
-                    
-                entry_price = data.loc[entry_date, 'close']
-                exit_price = data.loc[exit_date, 'close']
                 
-                pnl = (exit_price - entry_price) * position_size
+                entry_price = ticker_data.loc[entry_date, 'close']
+                exit_price = ticker_data.loc[exit_date, 'close']
+                
+                pnl = (exit_price - entry_price) * position
                 return_pct = (pnl / entry_price) * 100
                 
                 trade = {
                     'ticker': ticker,
                     'entry_date': entry_date,
                     'exit_date': exit_date,
-                    'position': position_size,
+                    'position': position,
                     'entry_price': entry_price,
                     'exit_price': exit_price,
                     'pnl': pnl,
                     'return_pct': return_pct
                 }
                 trades.append(trade)
-                
+        
         return trades
     
-    def _calculate_metrics(self, equity_curve: pd.Series, trades: List[Dict]) -> Dict[str, float]:
+    def _calculate_metrics(self, equity_curve: pd.Series, trades: List[Dict[str, Any]]) -> Dict[str, float]:
         """Calculate performance metrics."""
         # Calculate returns
         returns = equity_curve.pct_change().dropna()
         
         # Basic metrics
         total_return = (equity_curve.iloc[-1] / equity_curve.iloc[0] - 1) * 100
+        annualized_return = ((1 + total_return/100) ** (252/len(returns)) - 1) * 100
         sharpe_ratio = np.sqrt(252) * returns.mean() / returns.std() if len(returns) > 1 else 0
         max_drawdown = self._calculate_drawdowns(equity_curve).min() * 100
         
         # Trade metrics
-        win_trades = len([t for t in trades if t['pnl'] > 0])
         total_trades = len(trades)
-        win_rate = (win_trades / total_trades * 100) if total_trades > 0 else 0
-        
-        avg_return = np.mean([t['return_pct'] for t in trades]) if trades else 0
-        avg_win = np.mean([t['return_pct'] for t in trades if t['pnl'] > 0]) if win_trades > 0 else 0
-        avg_loss = np.mean([t['return_pct'] for t in trades if t['pnl'] < 0]) if (total_trades - win_trades) > 0 else 0
+        if total_trades > 0:
+            win_trades = len([t for t in trades if t['pnl'] > 0])
+            win_rate = (win_trades / total_trades) * 100
+            
+            # Calculate average returns
+            returns = [t['return_pct'] for t in trades]
+            avg_return = np.mean(returns) if returns else 0
+            
+            # Calculate average win/loss
+            win_returns = [r for r in returns if r > 0]
+            loss_returns = [r for r in returns if r <= 0]
+            avg_win = np.mean(win_returns) if win_returns else 0
+            avg_loss = np.mean(loss_returns) if loss_returns else 0
+            
+            # Calculate profit factor
+            gross_profit = sum(t['pnl'] for t in trades if t['pnl'] > 0)
+            gross_loss = abs(sum(t['pnl'] for t in trades if t['pnl'] < 0))
+            profit_factor = gross_profit / gross_loss if gross_loss != 0 else float('inf')
+        else:
+            win_rate = 0
+            avg_return = 0
+            avg_win = 0
+            avg_loss = 0
+            profit_factor = 0
         
         metrics = {
             'total_return': float(total_return),
+            'annualized_return': float(annualized_return),
             'sharpe_ratio': float(sharpe_ratio),
             'max_drawdown': float(max_drawdown),
             'win_rate': float(win_rate),
             'total_trades': total_trades,
             'avg_return': float(avg_return),
             'avg_win': float(avg_win),
-            'avg_loss': float(avg_loss)
+            'avg_loss': float(avg_loss),
+            'profit_factor': float(profit_factor)
         }
         
         return metrics
     
-    def plot_equity_curve(self, evaluation_result: EvaluationResult, save: bool = True) -> None:
-        """
-        Plot equity curve.
-        
-        Args:
-            evaluation_result: EvaluationResult object
-            save: Whether to save the plot
-        """
-        self.visualizer.plot_equity_curve(evaluation_result, save)
+    def plot_equity_curve(self, result: EvaluationResult, save: bool = False) -> None:
+        """Plot equity curve."""
+        self.visualizer.plot_equity_curve(result.equity_curve, save)
     
-    def plot_drawdown_curve(self, evaluation_result: EvaluationResult, save: bool = True) -> None:
-        """
-        Plot drawdown curve.
-        
-        Args:
-            evaluation_result: EvaluationResult object
-            save: Whether to save the plot
-        """
-        self.visualizer.plot_drawdown_curve(evaluation_result, save)
+    def plot_drawdown_curve(self, result: EvaluationResult, save: bool = False) -> None:
+        """Plot drawdown curve."""
+        self.visualizer.plot_drawdown_curve(result.drawdown_curve, save)
     
-    def plot_trade_distribution(self, evaluation_result: EvaluationResult, save: bool = True) -> None:
-        """
-        Plot trade distribution.
-        
-        Args:
-            evaluation_result: EvaluationResult object
-            save: Whether to save the plot
-        """
-        self.visualizer.plot_trade_distribution(evaluation_result, save)
+    def plot_trade_distribution(self, result: EvaluationResult, save: bool = False) -> None:
+        """Plot trade distribution."""
+        self.visualizer.plot_trade_distribution(result.trades, save)
     
-    def plot_monthly_returns(self, evaluation_result: EvaluationResult, save: bool = True) -> None:
-        """
-        Plot monthly returns heatmap.
-        
-        Args:
-            evaluation_result: EvaluationResult object
-            save: Whether to save the plot
-        """
-        self.visualizer.plot_monthly_returns(evaluation_result, save)
+    def plot_monthly_returns(self, result: EvaluationResult, save: bool = False) -> None:
+        """Plot monthly returns."""
+        self.visualizer.plot_monthly_returns(result.equity_curve, save)
     
-    def plot_position_concentration(self, evaluation_result: EvaluationResult, save: bool = True) -> None:
-        """
-        Plot position concentration.
-        
-        Args:
-            evaluation_result: EvaluationResult object
-            save: Whether to save the plot
-        """
-        self.visualizer.plot_position_concentration(evaluation_result, save)
+    def plot_position_concentration(self, result: EvaluationResult, save: bool = False) -> None:
+        """Plot position concentration."""
+        self.visualizer.plot_position_concentration(result.positions, save)
     
-    def plot_performance_dashboard(self, evaluation_result: EvaluationResult, save: bool = True) -> None:
-        """
-        Plot a comprehensive performance dashboard.
-        
-        Args:
-            evaluation_result: EvaluationResult object
-            save: Whether to save the plot
-        """
-        self.visualizer.plot_performance_dashboard(evaluation_result, save)
+    def plot_performance_dashboard(self, result: EvaluationResult, save: bool = False) -> None:
+        """Plot performance dashboard."""
+        self.visualizer.plot_performance_dashboard(result, save)
     
-    def export_to_excel(self, evaluation_result: EvaluationResult, filename: str = "backtest_results.xlsx") -> str:
-        """
-        Export backtest results to Excel.
-        
-        Args:
-            evaluation_result: EvaluationResult object
-            filename: Name of the Excel file
-            
-        Returns:
-            Path to the saved Excel file
-        """
-        return self.visualizer.export_to_excel(evaluation_result, filename)
-    
-    def print_metrics(self, evaluation_result: EvaluationResult) -> None:
-        """
-        Print performance metrics.
-        
-        Args:
-            evaluation_result: EvaluationResult object
-        """
-        metrics = evaluation_result.metrics
-        
-        print("=== Performance Metrics ===")
-        print(f"Total Return: {metrics['total_return']:.2%}")
-        print(f"Annual Return: {metrics['total_return'] / 252:.2%}")
-        print(f"Annual Volatility: {metrics['sharpe_ratio'] * np.sqrt(252):.2%}")
-        print(f"Sharpe Ratio: {metrics['sharpe_ratio']:.2f}")
-        print(f"Max Drawdown: {metrics['max_drawdown']:.2%}")
-        
-        print("\n=== Trade Metrics ===")
-        print(f"Number of Trades: {metrics['total_trades']}")
-        print(f"Win Rate: {metrics['win_rate']:.2%}")
-        print(f"Profit Factor: {metrics['total_return'] / -metrics['avg_loss']:.2f}")
-        print(f"Average Win: {metrics['avg_win']:.2f}")
-        print(f"Average Loss: {metrics['avg_loss']:.2f}")
-    
-    def generate_report(self, evaluation_result: EvaluationResult) -> str:
-        """
-        Generate a comprehensive evaluation report.
-        
-        Args:
-            evaluation_result: EvaluationResult object
-            
-        Returns:
-            String containing the evaluation report
-        """
-        metrics = evaluation_result.metrics
-        
+    def generate_report(self, result: EvaluationResult) -> str:
+        """Generate performance report."""
         report = []
-        report.append("# Strategy Evaluation Report")
+        report.append("Performance Report")
+        report.append("=================")
         report.append("")
         
-        report.append("## Performance Metrics")
-        report.append(f"- Total Return: {metrics['total_return']:.2%}")
-        report.append(f"- Annual Return: {metrics['total_return'] / 252:.2%}")
-        report.append(f"- Annual Volatility: {metrics['sharpe_ratio'] * np.sqrt(252):.2%}")
-        report.append(f"- Sharpe Ratio: {metrics['sharpe_ratio']:.2f}")
-        report.append(f"- Max Drawdown: {metrics['max_drawdown']:.2%}")
+        # Add metrics section
+        report.append("Performance Metrics")
+        report.append("-----------------")
+        for key, value in result.metrics.items():
+            report.append(f"{key.replace('_', ' ').title()}: {value:.2f}")
         report.append("")
         
-        report.append("## Trade Metrics")
-        report.append(f"- Number of Trades: {metrics['total_trades']}")
-        report.append(f"- Win Rate: {metrics['win_rate']:.2%}")
-        report.append(f"- Profit Factor: {metrics['total_return'] / -metrics['avg_loss']:.2f}")
-        report.append(f"- Average Win: {metrics['avg_win']:.2f}")
-        report.append(f"- Average Loss: {metrics['avg_loss']:.2f}")
-        report.append("")
-        
-        report.append("## Equity Curve")
-        report.append("```")
-        report.append(evaluation_result.equity_curve.to_string())
-        report.append("```")
-        report.append("")
-        
-        report.append("## Drawdown Curve")
-        report.append("```")
-        report.append(evaluation_result.drawdown_curve.to_string())
-        report.append("```")
-        report.append("")
-        
-        report.append("## Trade Summary")
-        report.append("```")
-        report.append(pd.DataFrame(evaluation_result.trades).to_string())
-        report.append("```")
+        # Add trade statistics
+        report.append("Trade Statistics")
+        report.append("---------------")
+        report.append(f"Total Trades: {len(result.trades)}")
+        if result.trades:
+            win_trades = len([t for t in result.trades if t['pnl'] > 0])
+            win_rate = (win_trades / len(result.trades)) * 100
+            report.append(f"Win Rate: {win_rate:.2f}%")
+            
+            avg_pnl = np.mean([t['pnl'] for t in result.trades])
+            report.append(f"Average P&L: {avg_pnl:.2f}")
+            
+            avg_duration = np.mean([
+                (t['exit_date'][0] - t['entry_date'][0]).days 
+                for t in result.trades
+            ])
+            report.append(f"Average Trade Duration: {avg_duration:.1f} days")
         report.append("")
         
         return "\n".join(report)
+    
+    def print_metrics(self, result: EvaluationResult) -> None:
+        """Print performance metrics."""
+        print(self.generate_report(result))
+    
+    def export_to_excel(self, result: EvaluationResult, filename: str) -> str:
+        """Export results to Excel."""
+        with pd.ExcelWriter(filename) as writer:
+            # Write equity curve
+            result.equity_curve.to_excel(writer, sheet_name='Equity Curve')
+            
+            # Write drawdown curve
+            result.drawdown_curve.to_excel(writer, sheet_name='Drawdowns')
+            
+            # Write trades
+            trades_df = pd.DataFrame(result.trades)
+            trades_df.to_excel(writer, sheet_name='Trades')
+            
+            # Write positions
+            result.positions.to_excel(writer, sheet_name='Positions')
+            
+            # Write metrics
+            metrics_df = pd.DataFrame([result.metrics])
+            metrics_df.to_excel(writer, sheet_name='Metrics')
+        
+        return filename

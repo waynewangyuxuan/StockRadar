@@ -1,9 +1,8 @@
 """
 Visualization module for backtesting results.
 
-This module provides functionality to visualize backtesting results,
-including equity curves, drawdown curves, trade distributions,
-and performance metrics.
+This module provides functionality to visualize backtesting results
+through various plots and charts.
 """
 
 import os
@@ -11,7 +10,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 from pathlib import Path
 from matplotlib.dates import date2num
@@ -21,16 +20,10 @@ from .models import EvaluationResult
 
 class BacktestVisualizer:
     """
-    Visualizes backtesting results.
+    Visualizer for backtesting results.
     
-    This class provides methods to create various visualizations
-    of backtesting results, including:
-    - Equity curves
-    - Drawdown curves
-    - Trade distributions
-    - Monthly returns heatmaps
-    - Position concentration
-    - Performance dashboards
+    This class provides methods to create various plots and charts
+    to visualize backtesting results.
     """
     
     def __init__(self, output_dir: str = "backtest_results"):
@@ -83,6 +76,120 @@ class BacktestVisualizer:
             plt.close()
         else:
             plt.show()
+    
+    def plot_results(self, result: EvaluationResult, save_path: Optional[str] = None) -> None:
+        """
+        Create a comprehensive visualization of strategy results.
+        
+        Args:
+            result: EvaluationResult containing the backtest results
+            save_path: Optional path to save the figure
+        """
+        fig, axes = plt.subplots(3, 1, figsize=(15, 10))
+        
+        # Plot equity curve
+        self._plot_equity_curve(axes[0], result.equity_curve)
+        
+        # Plot drawdowns
+        self._plot_drawdowns(axes[1], result.drawdown_curve)
+        
+        # Plot positions
+        self._plot_positions(axes[2], result.positions)
+        
+        # Add metrics text
+        self._add_metrics_text(result.metrics)
+        
+        plt.tight_layout()
+        if save_path:
+            plt.savefig(save_path)
+        plt.show()
+    
+    def _plot_equity_curve(self, ax: plt.Axes, equity_curve: pd.DataFrame) -> None:
+        """Plot equity curve."""
+        ax.plot(equity_curve.index, equity_curve['value'])
+        ax.set_title('Equity Curve')
+        ax.set_ylabel('Portfolio Value')
+    
+    def _plot_drawdowns(self, ax: plt.Axes, drawdown_curve: pd.DataFrame) -> None:
+        """Plot drawdown curve."""
+        ax.fill_between(drawdown_curve.index, drawdown_curve['value'], 0, color='red', alpha=0.3)
+        ax.set_title('Drawdown')
+        ax.set_ylabel('Drawdown %')
+    
+    def _plot_positions(self, ax: plt.Axes, positions: pd.DataFrame) -> None:
+        """Plot positions."""
+        ax.plot(positions.index, positions['position'])
+        ax.set_title('Positions')
+        ax.set_ylabel('Position Size')
+    
+    def _add_metrics_text(self, metrics: dict) -> None:
+        """Add metrics text to the plot."""
+        text = f"Total Return: {metrics['total_return']:.2%}\n"
+        text += f"Sharpe Ratio: {metrics['sharpe_ratio']:.2f}\n"
+        text += f"Max Drawdown: {metrics['max_drawdown']:.2%}\n"
+        text += f"Win Rate: {metrics['win_rate']:.2%}"
+        
+        plt.figtext(0.02, 0.02, text, fontsize=10, bbox=dict(facecolor='white', alpha=0.8))
+
+    def plot_trade_analysis(self, result: EvaluationResult, save_path: Optional[str] = None) -> None:
+        """
+        Plot trade analysis including PnL distribution and trade metrics.
+        
+        Args:
+            result: EvaluationResult object
+            save_path: Path to save the plot
+        """
+        # Create figure and subplots
+        self.fig, self.axes = plt.subplots(2, 2, figsize=(15, 10))
+        plt.subplots_adjust(hspace=0.3, wspace=0.3)
+        
+        # Plot PnL distribution
+        self._plot_pnl_distribution(self.axes[0, 0], result.trade_summary)
+        
+        # Plot cumulative PnL
+        self._plot_cumulative_pnl(self.axes[0, 1], result.trade_summary)
+        
+        # Plot trade duration vs PnL
+        self._plot_duration_vs_pnl(self.axes[1, 0], result.trade_summary)
+        
+        # Plot monthly win rate
+        self._plot_monthly_win_rate(self.axes[1, 1], result.trade_summary)
+        
+        if save_path:
+            plt.savefig(save_path, bbox_inches='tight', dpi=300)
+    
+    def _plot_pnl_distribution(self, ax: plt.Axes, trade_summary: pd.DataFrame) -> None:
+        """Plot PnL distribution."""
+        sns.histplot(data=trade_summary, x='pnl', bins=30, ax=ax)
+        ax.set_title('Trade PnL Distribution')
+        ax.set_xlabel('PnL')
+        ax.set_ylabel('Count')
+    
+    def _plot_cumulative_pnl(self, ax: plt.Axes, trade_summary: pd.DataFrame) -> None:
+        """Plot cumulative PnL."""
+        cumulative_pnl = trade_summary['pnl'].cumsum()
+        ax.plot(trade_summary.index, cumulative_pnl)
+        ax.set_title('Cumulative PnL')
+        ax.set_xlabel('Trade')
+        ax.set_ylabel('Cumulative PnL')
+    
+    def _plot_duration_vs_pnl(self, ax: plt.Axes, trade_summary: pd.DataFrame) -> None:
+        """Plot trade duration vs PnL."""
+        ax.scatter(trade_summary['duration'].dt.days, trade_summary['pnl'])
+        ax.set_title('Trade Duration vs PnL')
+        ax.set_xlabel('Duration (days)')
+        ax.set_ylabel('PnL')
+    
+    def _plot_monthly_win_rate(self, ax: plt.Axes, trade_summary: pd.DataFrame) -> None:
+        """Plot monthly win rate."""
+        # Group trades by month and calculate win rate
+        monthly_trades = trade_summary.set_index('entry_date').resample('M')
+        monthly_win_rate = monthly_trades.apply(lambda x: (x['pnl'] > 0).mean())
+        
+        ax.plot(monthly_win_rate.index, monthly_win_rate['pnl'])
+        ax.set_title('Monthly Win Rate')
+        ax.set_xlabel('Month')
+        ax.set_ylabel('Win Rate')
     
     def plot_all(self, result: EvaluationResult, price_data: pd.Series, volume_data: pd.Series, save: bool = True) -> None:
         """
@@ -187,139 +294,99 @@ class BacktestVisualizer:
         
         self._show_or_close(save)
         
-    def plot_equity_curve(self, result: EvaluationResult, save: bool = True) -> None:
-        """
-        Plot equity curve and drawdowns.
-        
-        Args:
-            result: EvaluationResult containing equity curve and drawdowns
-            save: Whether to save the plot to file
-        """
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), height_ratios=[2, 1])
+    def plot_equity_curve(self, equity_curve: pd.DataFrame, save: bool = False) -> None:
+        """Plot equity curve."""
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), gridspec_kw={'height_ratios': [3, 1]})
         
         # Plot equity curve
-        result.equity_curve.plot(ax=ax1, label='Portfolio Value')
-        ax1.set_title('Equity Curve')
+        equity_curve['value'].plot(ax=ax1, label='Portfolio Value')
+        ax1.set_title('Portfolio Equity Curve')
         ax1.set_xlabel('Date')
         ax1.set_ylabel('Portfolio Value')
         ax1.grid(True)
         ax1.legend()
         
-        # Plot drawdowns
-        result.drawdown_curve.plot(ax=ax2, color='red', label='Drawdown')
-        ax2.set_title('Drawdowns')
+        # Plot returns
+        returns = equity_curve['value'].pct_change()
+        returns.plot(ax=ax2, kind='bar', alpha=0.5, label='Daily Returns')
+        ax2.set_title('Daily Returns')
         ax2.set_xlabel('Date')
-        ax2.set_ylabel('Drawdown %')
+        ax2.set_ylabel('Return (%)')
         ax2.grid(True)
         ax2.legend()
         
         plt.tight_layout()
-        
         if save:
-            plt.savefig(os.path.join(self.output_dir, 'equity_curve.png'))
-        self._show_or_close(save)
+            plt.savefig('equity_curve.png')
+        plt.close()
     
-    def plot_drawdown_curve(self, result: EvaluationResult, save: bool = True) -> None:
-        """
-        Plot drawdown curve.
-        
-        Args:
-            result: EvaluationResult containing drawdown curve
-            save: Whether to save the plot to file
-        """
+    def plot_drawdown_curve(self, drawdown_curve: pd.DataFrame, save: bool = False) -> None:
+        """Plot drawdown curve."""
         plt.figure(figsize=(12, 6))
-        result.drawdown_curve.plot(color='red', label='Drawdown')
-        plt.title('Drawdown Curve')
+        
+        drawdown_curve['value'].plot(kind='area', color='red', alpha=0.3, label='Drawdown')
+        plt.title('Portfolio Drawdown')
         plt.xlabel('Date')
-        plt.ylabel('Drawdown %')
+        plt.ylabel('Drawdown (%)')
         plt.grid(True)
         plt.legend()
         
         if save:
-            plt.savefig(os.path.join(self.output_dir, 'drawdown_curve.png'))
-        self._show_or_close(save)
+            plt.savefig('drawdown.png')
+        plt.close()
     
-    def plot_trade_distribution(self, result: EvaluationResult, save: bool = True) -> None:
-        """
-        Plot trade return distribution.
-        
-        Args:
-            result: EvaluationResult containing trades
-            save: Whether to save the plot to file
-        """
-        if not result.trades:
-            print("No trades to plot")
+    def plot_monthly_returns(self, equity_curve: pd.DataFrame, save: bool = False) -> None:
+        """Plot monthly returns heatmap."""
+        if equity_curve.empty:
+            print("No equity curve data to plot")
             return
-        
-        returns = [trade['return_pct'] for trade in result.trades]
-        
-        plt.figure(figsize=(10, 6))
-        sns.histplot(returns, kde=True)
-        plt.title('Trade Return Distribution')
-        plt.xlabel('Return %')
-        plt.ylabel('Count')
-        plt.grid(True)
-        
-        if save:
-            plt.savefig(os.path.join(self.output_dir, 'trade_distribution.png'))
-        self._show_or_close(save)
-    
-    def plot_monthly_returns(self, result: EvaluationResult, save: bool = True) -> None:
-        """
-        Plot monthly returns heatmap.
-        
-        Args:
-            result: EvaluationResult containing equity curve
-            save: Whether to save the plot to file
-        """
-        # Reset index to get date as a column
-        equity_curve = result.equity_curve.reset_index()
-        equity_curve['date'] = pd.to_datetime(equity_curve['date'])
+            
+        # Get the total portfolio value for each date
+        portfolio_values = equity_curve.groupby(level='date')['value'].sum()
         
         # Calculate monthly returns
-        monthly_returns = equity_curve.groupby([equity_curve['date'].dt.year, equity_curve['date'].dt.month])['value'].last().pct_change() * 100
-        monthly_returns_matrix = monthly_returns.unstack()
+        monthly_returns = portfolio_values.resample('ME').last().pct_change()
+        
+        # Create a DataFrame with year and month columns
+        monthly_df = pd.DataFrame({
+            'year': monthly_returns.index.year,
+            'month': monthly_returns.index.month,
+            'return': monthly_returns.values
+        })
+        
+        # Pivot to create the heatmap
+        heatmap_data = monthly_df.pivot(index='year', columns='month', values='return')
         
         plt.figure(figsize=(12, 8))
-        sns.heatmap(monthly_returns_matrix, annot=True, fmt='.1f', center=0, cmap='RdYlGn')
-        plt.title('Monthly Returns (%)')
+        sns.heatmap(heatmap_data, annot=True, fmt='.1%', cmap='RdYlGn', center=0)
+        plt.title('Monthly Returns Heatmap')
         plt.xlabel('Month')
         plt.ylabel('Year')
         
         if save:
-            plt.savefig(os.path.join(self.output_dir, 'monthly_returns.png'))
-        self._show_or_close(save)
+            plt.savefig('monthly_returns.png')
+        plt.close()
     
-    def plot_position_concentration(self, result: EvaluationResult, save: bool = True) -> None:
-        """
-        Plot position concentration.
-        
-        Args:
-            result: EvaluationResult containing positions
-            save: Whether to save the plot to file
-        """
-        if result.positions.empty:
-            print("No positions to plot")
+    def plot_position_concentration(self, positions: pd.DataFrame, save: bool = False) -> None:
+        """Plot position concentration over time."""
+        if positions.empty:
+            print("No position data to plot")
             return
+            
+        # Calculate position concentration
+        position_concentration = positions['position'].abs().groupby(level=0).sum()
         
         plt.figure(figsize=(12, 6))
-        
-        # Calculate position concentration
-        position_values = result.positions['position'].value_counts()
-        position_values = position_values / position_values.sum() * 100
-        
-        plt.pie(
-            position_values,
-            labels=position_values.index,
-            autopct='%1.1f%%',
-            startangle=90
-        )
-        
-        plt.title('Position Concentration')
+        position_concentration.plot(kind='bar')
+        plt.title('Position Concentration Over Time')
+        plt.xlabel('Date')
+        plt.ylabel('Absolute Position Size')
+        plt.xticks(rotation=45)
+        plt.tight_layout()
         
         if save:
-            plt.savefig(os.path.join(self.output_dir, 'position_concentration.png'))
-        self._show_or_close(save)
+            plt.savefig('position_concentration.png')
+        plt.close()
     
     def plot_performance_dashboard(self, result: EvaluationResult, save: bool = True) -> None:
         """
@@ -555,4 +622,23 @@ class BacktestVisualizer:
             # Write signals
             result.signals.to_excel(writer, sheet_name='Signals')
         
-        return output_file 
+        return output_file
+
+    def plot_trade_distribution(self, trades: List[Dict[str, Any]], save: bool = False) -> None:
+        """Plot trade return distribution."""
+        if not trades:
+            print("No trades to plot")
+            return
+        
+        returns = [trade['return_pct'] for trade in trades]
+        
+        plt.figure(figsize=(10, 6))
+        sns.histplot(returns, kde=True)
+        plt.title('Trade Return Distribution')
+        plt.xlabel('Return %')
+        plt.ylabel('Count')
+        plt.grid(True)
+        
+        if save:
+            plt.savefig('trade_distribution.png')
+        plt.close() 

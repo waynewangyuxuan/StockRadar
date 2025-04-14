@@ -64,36 +64,75 @@ class PerformanceMetrics:
         """
         self.risk_free_rate = risk_free_rate
     
-    def calculate(self, results: Dict[str, Any]) -> Dict[str, Any]:
+    def calculate(self, equity_curve: pd.DataFrame, drawdown_curve: pd.DataFrame, trades: List[Dict[str, Any]]) -> Dict[str, float]:
         """
-        Calculate all performance metrics from backtest results.
+        Calculate performance metrics.
         
         Args:
-            results: Dictionary containing backtest results
+            equity_curve: Portfolio equity curve
+            drawdown_curve: Portfolio drawdown curve
+            trades: List of trade dictionaries
             
         Returns:
-            Dictionary containing all calculated metrics
+            Dictionary of performance metrics
         """
-        # Extract data from results
-        portfolio_values = results['portfolio_values']
-        timestamps = results['timestamps']
-        trades = results['trades']
-        positions = results['positions']
-        
         # Calculate returns
-        returns = np.diff(portfolio_values) / portfolio_values[:-1]
+        returns = equity_curve['value'].pct_change().dropna()
         
-        # Calculate metrics
-        trade_metrics = self._calculate_trade_metrics(trades)
-        return_metrics = self._calculate_return_metrics(returns, portfolio_values)
-        position_metrics = self._calculate_position_metrics(positions, trades)
+        # Basic metrics
+        total_return = (equity_curve['value'].iloc[-1] / equity_curve['value'].iloc[0] - 1) * 100 if len(equity_curve) > 0 else 0
         
-        # Combine all metrics
-        return {
-            'trade_metrics': trade_metrics,
-            'return_metrics': return_metrics,
-            'position_metrics': position_metrics
+        # Handle edge cases for annualized return
+        if len(returns) > 0:
+            annualized_return = ((1 + total_return/100) ** (252/len(returns)) - 1) * 100
+            sharpe_ratio = np.sqrt(252) * returns.mean() / returns.std() if len(returns) > 1 else 0
+        else:
+            annualized_return = 0
+            sharpe_ratio = 0
+            
+        max_drawdown = drawdown_curve['value'].min() * 100 if len(drawdown_curve) > 0 else 0
+        
+        # Trade metrics
+        total_trades = len(trades)
+        if total_trades > 0:
+            win_trades = len([t for t in trades if t['pnl'] > 0])
+            win_rate = (win_trades / total_trades) * 100
+            
+            # Calculate average returns
+            returns = [t['return_pct'] for t in trades]
+            avg_return = np.mean(returns) if returns else 0
+            
+            # Calculate average win/loss
+            win_returns = [r for r in returns if r > 0]
+            loss_returns = [r for r in returns if r <= 0]
+            avg_win = np.mean(win_returns) if win_returns else 0
+            avg_loss = np.mean(loss_returns) if loss_returns else 0
+            
+            # Calculate profit factor
+            gross_profit = sum(t['pnl'] for t in trades if t['pnl'] > 0)
+            gross_loss = abs(sum(t['pnl'] for t in trades if t['pnl'] < 0))
+            profit_factor = gross_profit / gross_loss if gross_loss != 0 else float('inf')
+        else:
+            win_rate = 0
+            avg_return = 0
+            avg_win = 0
+            avg_loss = 0
+            profit_factor = 0
+        
+        metrics = {
+            'total_return': float(total_return),
+            'annualized_return': float(annualized_return),
+            'sharpe_ratio': float(sharpe_ratio),
+            'max_drawdown': float(max_drawdown),
+            'win_rate': float(win_rate),
+            'total_trades': total_trades,
+            'avg_return': float(avg_return),
+            'avg_win': float(avg_win),
+            'avg_loss': float(avg_loss),
+            'profit_factor': float(profit_factor)
         }
+        
+        return metrics
     
     def _calculate_trade_metrics(self, trades: List[Dict[str, Any]]) -> TradeMetrics:
         """
