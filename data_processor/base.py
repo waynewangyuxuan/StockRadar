@@ -58,16 +58,19 @@ class DataProcessorBase(ABC):
         Returns:
             True if valid, raises ValueError if invalid
         """
-        required_cols = ['ticker', 'date', 'open', 'high', 'low', 'close', 'volume']
+        required_cols = ['open', 'high', 'low', 'close', 'volume']
         missing_cols = [col for col in required_cols if col not in data.columns]
         if missing_cols:
             raise ValueError(f"Missing required columns: {missing_cols}")
             
-        if data.empty:
-            raise ValueError("DataFrame is empty")
+        # Check if index has required levels
+        if not isinstance(data.index, pd.MultiIndex):
+            raise ValueError("DataFrame must have a MultiIndex with 'date' and 'ticker' levels")
             
-        if not pd.api.types.is_datetime64_any_dtype(data['date']):
-            raise ValueError("Date column must be datetime")
+        required_levels = ['date', 'ticker']
+        missing_levels = [level for level in required_levels if level not in data.index.names]
+        if missing_levels:
+            raise ValueError(f"Missing required index levels: {missing_levels}")
             
         return True
     

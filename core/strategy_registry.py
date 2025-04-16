@@ -6,41 +6,29 @@ trading strategies.
 """
 
 from typing import Dict, Type, Any, Optional
+import logging
 from .schema import StrategyInterface
 
 class StrategyRegistry:
-    """
-    Registry for trading strategies.
-    
-    This class provides methods to:
-    - Register new strategies
-    - Discover available strategies
-    - Create strategy instances
-    - Manage strategy parameters
-    """
+    """Registry for managing trading strategies."""
     
     def __init__(self):
         """Initialize the strategy registry."""
         self._strategies: Dict[str, Type[StrategyInterface]] = {}
         self._parameters: Dict[str, Dict[str, Any]] = {}
+        self.logger = logging.getLogger(__name__)
         
-    def register(self, strategy_class: Type[StrategyInterface], 
-                name: Optional[str] = None) -> None:
-        """
-        Register a new strategy class.
+    def register(self, name: str, strategy_class: Type[StrategyInterface]) -> None:
+        """Register a strategy class.
         
         Args:
-            strategy_class: The strategy class to register
-            name: Optional name for the strategy (defaults to class name)
+            name: Name of the strategy
+            strategy_class: Strategy class to register
         """
-        if name is None:
-            name = strategy_class.__name__
-            
         if name in self._strategies:
-            raise ValueError(f"Strategy {name} already registered")
-            
+            self.logger.warning(f"Strategy {name} already registered, overwriting")
         self._strategies[name] = strategy_class
-        self._parameters[name] = {}
+        self.logger.info(f"Registered strategy: {name}")
         
     def unregister(self, name: str) -> None:
         """
@@ -55,34 +43,37 @@ class StrategyRegistry:
         del self._strategies[name]
         del self._parameters[name]
         
-    def get_strategy(self, name: str) -> Type[StrategyInterface]:
-        """
-        Get a registered strategy class.
+    def get(self, name: str) -> Optional[Type[StrategyInterface]]:
+        """Get a strategy class by name.
         
         Args:
             name: Name of the strategy
             
         Returns:
-            The strategy class
+            Strategy class if found, None otherwise
         """
-        if name not in self._strategies:
-            raise ValueError(f"Strategy {name} not found")
-            
-        return self._strategies[name]
+        return self._strategies.get(name)
         
-    def create_strategy(self, name: str, **kwargs) -> StrategyInterface:
-        """
-        Create a new strategy instance.
+    def create_strategy(self, name: str, config: dict) -> Optional[StrategyInterface]:
+        """Create a strategy instance.
         
         Args:
             name: Name of the strategy
-            **kwargs: Additional arguments to pass to strategy constructor
+            config: Strategy configuration
             
         Returns:
-            A new strategy instance
+            Strategy instance if found, None otherwise
         """
-        strategy_class = self.get_strategy(name)
-        return strategy_class(**kwargs)
+        strategy_class = self.get(name)
+        if strategy_class is None:
+            self.logger.error(f"Strategy {name} not found")
+            return None
+            
+        try:
+            return strategy_class(config)
+        except Exception as e:
+            self.logger.error(f"Failed to create strategy {name}: {str(e)}")
+            return None
         
     def set_parameters(self, name: str, parameters: Dict[str, Any]) -> None:
         """
@@ -112,15 +103,13 @@ class StrategyRegistry:
             
         return self._parameters[name].copy()
         
-    def list_strategies(self) -> Dict[str, Dict[str, Any]]:
-        """
-        List all registered strategies and their parameters.
+    def list_strategies(self) -> list[str]:
+        """Get list of registered strategy names.
         
         Returns:
-            Dictionary mapping strategy names to their parameters
+            List of strategy names
         """
-        return {name: self.get_parameters(name) 
-                for name in self._strategies}
+        return list(self._strategies.keys())
         
     def clear(self) -> None:
         """Clear all registered strategies."""

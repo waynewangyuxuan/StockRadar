@@ -59,4 +59,11 @@ class FactorRegistry:
             return factor_class(config)
         except Exception as e:
             self.logger.error(f"Failed to create factor {name}: {str(e)}")
-            return None 
+            return None
+            
+    def clear(self) -> None:
+        """Clear all registered factors."""
+        self._factors.clear()
+
+# Global registry instance
+registry = FactorRegistry() 

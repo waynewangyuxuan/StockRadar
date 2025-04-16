@@ -22,6 +22,7 @@ from data_fetcher.base import DataProviderBase as DataProvider
 from data_processor.processor import DataProcessor
 from backtester.evaluator import StrategyEvaluator
 from backtester.visualization import BacktestVisualizer
+from .types import MarketData, SignalData
 
 class TradingRunner:
     """
@@ -127,7 +128,7 @@ class TradingRunner:
                 if strategy_name:
                     try:
                         # Get strategy from registry
-                        strategy_class = self.strategy_registry.get_strategy(strategy_name)
+                        strategy_class = self.strategy_registry.get(strategy_name)
                         if strategy_class:
                             # Create strategy instance with parameters
                             strategy = strategy_class(strategy_config.get("parameters", {}))
@@ -322,8 +323,7 @@ class TradingRunner:
         return data
         
     def _generate_live_signals(self, data: pd.DataFrame) -> pd.DataFrame:
-        """
-        Generate signals from strategies for live trading.
+        """Generate trading signals from live market data.
         
         Args:
             data: Processed market data
@@ -331,17 +331,40 @@ class TradingRunner:
         Returns:
             DataFrame with signals
         """
+        # Calculate factors first
+        factor_data = self.calculate_factors(data)
+        
         # Combine signals from all strategies
         all_signals = []
         
         for strategy in self.strategies:
+            # Get required factors for this strategy
+            required_factors = strategy.get_required_factors()
+            
+            # If strategy requires factors, create a DataFrame with just those factors
+            if required_factors:
+                strategy_factors = pd.DataFrame(index=data.index)
+                for factor_name in required_factors:
+                    if factor_name in factor_data:
+                        strategy_factors[factor_name] = factor_data[factor_name]
+                    else:
+                        self.logger.warning(f"Required factor {factor_name} not found for {strategy}")
+                        continue
+            else:
+                strategy_factors = None
+            
             # Generate signals
-            signals = strategy.generate_signals(data)
+            signal_data = strategy.generate_signals(data, strategy_factors)
             
+            # Convert SignalData to DataFrame if needed
+            if isinstance(signal_data, SignalData):
+                signals_df = signal_data.data
+            else:
+                signals_df = signal_data
+                
             # Add strategy name
-            signals['strategy'] = strategy.__class__.__name__
-            
-            all_signals.append(signals)
+            signals_df['strategy'] = strategy.__class__.__name__
+            all_signals.append(signals_df)
             
         # Combine signals
         if all_signals:
@@ -361,9 +384,13 @@ class TradingRunner:
         if signals.empty:
             return
             
+        # Get unique tickers from the index
+        tickers = signals.index.get_level_values('ticker').unique()
+        
         # Group signals by ticker
-        for ticker in signals['ticker'].unique():
-            ticker_signals = signals[signals['ticker'] == ticker]
+        for ticker in tickers:
+            # Get signals for this ticker
+            ticker_signals = signals[signals.index.get_level_values('ticker') == ticker]
             
             # Get latest signal
             latest_signal = ticker_signals.iloc[-1]
@@ -372,7 +399,7 @@ class TradingRunner:
             current_position = self.portfolio['positions'].get(ticker, 0)
             
             # Get current price
-            current_price = data[data['ticker'] == ticker]['close'].iloc[-1]
+            current_price = data[data.index.get_level_values('ticker') == ticker]['close'].iloc[-1]
             
             # Determine action based on signal and current position
             if latest_signal['signal'] == 1 and current_position <= 0:  # BUY
@@ -519,7 +546,7 @@ class TradingRunner:
         
         for ticker, position in self.portfolio['positions'].items():
             # Get latest price
-            ticker_data = data[data['ticker'] == ticker]
+            ticker_data = data[data.index.get_level_values('ticker') == ticker]
             if not ticker_data.empty:
                 latest_price = ticker_data['close'].iloc[-1]
                 
@@ -540,7 +567,7 @@ class TradingRunner:
         # Check stop loss and take profit
         for ticker, position in list(self.portfolio['positions'].items()):
             # Get latest price
-            ticker_data = data[data['ticker'] == ticker]
+            ticker_data = data[data.index.get_level_values('ticker') == ticker]
             if ticker_data.empty:
                 continue
                 
@@ -572,24 +599,29 @@ class TradingRunner:
     def _wait_for_next_update(self) -> None:
         """Wait until the next update based on data interval."""
         # Get update interval
-        interval = self.config["data"].get("interval", "1d")
+        interval = self.config["data"].get("interval", "1m")  # Default to 1 minute instead of 1 day
         
         # Convert interval to seconds
         if interval == "1d":
-            sleep_time = 24 * 60 * 60  # 24 hours
+            sleep_time = 5 * 60  # 5 minutes for daily data instead of 24 hours
         elif interval == "1h":
-            sleep_time = 60 * 60  # 1 hour
+            sleep_time = 60  # 1 minute for hourly data
         elif interval == "15m":
-            sleep_time = 15 * 60  # 15 minutes
+            sleep_time = 15  # 15 seconds for 15-min data
         elif interval == "5m":
-            sleep_time = 5 * 60  # 5 minutes
+            sleep_time = 5   # 5 seconds for 5-min data
         elif interval == "1m":
-            sleep_time = 60  # 1 minute
+            sleep_time = 1   # 1 second for 1-min data
         else:
-            sleep_time = 60  # Default to 1 minute
+            sleep_time = 1   # Default to 1 second
             
+        self.logger.info(f"Waiting {sleep_time} seconds until next update (interval: {interval})")
+        
         # Sleep until next update or until stop event
         self.stop_event.wait(sleep_time)
+        
+        if not self.stop_event.is_set():
+            self.logger.info("Resuming trading loop")
     
     def _load_historical_data(self) -> pd.DataFrame:
         """
@@ -601,8 +633,14 @@ class TradingRunner:
         data_config = self.config.get("data", {})
         
         # Get date range
-        start_date = data_config.get("start_date")
-        end_date = data_config.get("end_date")
+        start_date = data_config.get("start_date") or self.config.get("start_date")
+        end_date = data_config.get("end_date") or self.config.get("end_date")
+        
+        # Convert string dates to datetime objects
+        if isinstance(start_date, str):
+            start_date = pd.to_datetime(start_date).to_pydatetime()
+        if isinstance(end_date, str):
+            end_date = pd.to_datetime(end_date).to_pydatetime()
         
         # Get symbols
         symbols = self._get_universe_symbols()
@@ -628,16 +666,17 @@ class TradingRunner:
         Returns:
             Processed data with factor values
         """
-        # First process with data processor
-        processed_data = self.data_processor.process(data)
+        # First process with data processor using required metrics
+        required_metrics = self.data_processor.get_required_metrics()
+        processed_data = self.data_processor.process_data(data, factors=required_metrics)
         
         # Then apply each factor
         for factor in self.factors:
             try:
                 processed_data = factor.calculate(processed_data)
-                self.logger.info(f"Applied factor: {factor.metadata.name}")
+                self.logger.info(f"Applied factor: {factor.__class__.__name__}")
             except Exception as e:
-                self.logger.warning(f"Failed to apply factor {factor.metadata.name}: {str(e)}")
+                self.logger.warning(f"Failed to apply factor {factor.__class__.__name__}: {str(e)}")
                 continue
                 
         return processed_data
@@ -697,4 +736,41 @@ class TradingRunner:
         equity_df = pd.DataFrame(results["equity_curve"])
         equity_df.to_csv(f"{strategy_dir}/equity_curve.csv")
         
-        self.logger.info(f"Backtest report saved to {strategy_dir}") 
+        self.logger.info(f"Backtest report saved to {strategy_dir}")
+    
+    def calculate_factors(self, market_data: pd.DataFrame) -> Dict[str, pd.DataFrame]:
+        """Calculate factors for the given market data.
+        
+        Args:
+            market_data: DataFrame with market data
+            
+        Returns:
+            Dictionary mapping factor names to their calculated values
+        """
+        # First calculate all registered factors
+        factor_results = {}
+        
+        for factor in self.factors:
+            try:
+                factor_values = factor.calculate(market_data)
+                # Store all columns from the factor
+                for col in factor_values.columns:
+                    if col not in ['open', 'high', 'low', 'close', 'volume']:  # Skip market data columns
+                        factor_results[col] = factor_values[col]
+                self.logger.info(f"Calculated factor: {factor.__class__.__name__}")
+            except Exception as e:
+                self.logger.warning(f"Failed to calculate factor {factor.__class__.__name__}: {str(e)}")
+                continue
+        
+        # Add required factors for mean reversion strategy if not already present
+        if 'ma' not in factor_results and 'sma_20' in factor_results:
+            factor_results['ma'] = factor_results['sma_20']  # Use 20-day SMA as the default MA
+            
+        if 'std' not in factor_results:
+            # Calculate 20-day rolling standard deviation for each ticker
+            std = market_data.groupby('ticker')['close'].transform(
+                lambda x: x.rolling(window=20, min_periods=1).std()
+            )
+            factor_results['std'] = std
+            
+        return factor_results 

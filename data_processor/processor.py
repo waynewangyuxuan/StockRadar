@@ -44,7 +44,7 @@ class DataProcessor(DataProcessorBase):
         """Process raw market data with comprehensive technical indicators.
         
         Args:
-            data: Raw market data DataFrame
+            data: Raw market data DataFrame with MultiIndex (date, ticker)
             factors: List of factors to calculate
             start_date: Optional start date for filtering
             end_date: Optional end date for filtering
@@ -61,17 +61,18 @@ class DataProcessor(DataProcessorBase):
         if start_date or end_date:
             mask = pd.Series(True, index=data.index)
             if start_date:
-                mask &= data['date'] >= start_date
+                mask &= data.index.get_level_values('date') >= start_date
             if end_date:
-                mask &= data['date'] <= end_date
+                mask &= data.index.get_level_values('date') <= end_date
             data = data[mask].copy()
         
         # Make a copy to avoid modifying input
         processed = data.copy()
         
         # Calculate for each ticker separately
-        for ticker in processed['ticker'].unique():
-            mask = processed['ticker'] == ticker
+        for ticker in processed.index.get_level_values('ticker').unique():
+            # Create a mask for this ticker using index
+            mask = processed.index.get_level_values('ticker') == ticker
             
             # Basic price metrics
             processed.loc[mask, 'returns'] = processed.loc[mask, 'close'].pct_change(fill_method=None)

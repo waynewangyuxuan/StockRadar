@@ -209,6 +209,36 @@ class YahooFinanceProvider(DataProviderBase):
                     
         return None
         
+    def _standardize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Standardize the DataFrame format.
+        
+        Args:
+            df: DataFrame to standardize
+            
+        Returns:
+            Standardized DataFrame with MultiIndex (date, ticker)
+        """
+        # Ensure we have the required columns
+        required_cols = ['date', 'ticker', 'open', 'high', 'low', 'close', 'volume']
+        for col in required_cols:
+            if col not in df.columns:
+                raise ValueError(f"Missing required column: {col}")
+        
+        # Convert date column to datetime if it's not already
+        if not pd.api.types.is_datetime64_any_dtype(df['date']):
+            df['date'] = pd.to_datetime(df['date'])
+        
+        # Set MultiIndex
+        df = df.set_index(['date', 'ticker'])
+        
+        # Sort index
+        df = df.sort_index()
+        
+        # Select and order columns
+        df = df[['open', 'high', 'low', 'close', 'volume']]
+        
+        return df
+        
     def get_symbol_info(self, symbol: str) -> Dict[str, Any]:
         """Get additional information about a stock symbol.
         

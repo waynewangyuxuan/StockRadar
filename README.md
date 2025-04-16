@@ -1,180 +1,149 @@
-# StockRadar
+# StockRadar Trading System
 
-A stock market data analysis and storage system with support for multiple storage backends.
+StockRadar is a flexible, modular trading system that supports both backtesting and live trading with customizable strategies and factors.
 
-## TODO
-### Irrelated to Optimization (C++ rewriting)
-1. stratedy engine
-2. Clarify Entry point for `stratedy engine` and `backtester`
-
-## Features
-
-- Multiple storage backends:
-  - Local file storage (Parquet format)
-  - Redis cache for fast access
-  - TimescaleDB for time-series data
-- Data versioning and snapshot management
-- Comprehensive test suite
-- Docker-based deployment
-
-## Prerequisites
-
-- Python 3.9 or higher
-- Docker and Docker Compose
-- Git
+## Todo
+1. Streamline the process to connect with the the storage system.
+2. Test more about the pipeline.
+2. Frontened Implementation.
 
 ## Quick Start
 
-1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/stockradar.git
-cd stockradar
+# Run live trading
+python run.py --mode live --config config/trading_config.yaml
+
+# Run backtesting
+python run.py --mode backtest --config config/backtest_config.yaml
 ```
 
-2. Start the services using Docker Compose:
-```bash
-docker compose up -d
+## System Architecture
+
+The system is orchestrated through `run.py`, which serves as the main entry point. Here's how it works:
+
+### Core Components
+
+1. **Trading Runner**: The central orchestrator that manages:
+   - Market data fetching and processing
+   - Strategy execution
+   - Portfolio management
+   - Risk management
+   - Trade execution
+
+2. **Data Pipeline**:
+   - Data Providers (e.g., Yahoo Finance)
+   - Data Processors for technical indicators
+   - Factor calculation engine
+
+3. **Strategy Framework**:
+   - Modular strategy implementation
+   - Signal generation
+   - Factor-based analysis
+
+### Implementation Logic
+
+The `run.py` script follows this sequence:
+
+1. **Configuration Loading**:
+   ```python
+   # Load and validate configuration
+   config = load_config(config_path)
+   ```
+
+2. **Component Initialization**:
+   ```python
+   # Initialize core components
+   data_provider = YahooFinanceProvider(config)
+   data_processor = DataProcessor(config)
+   strategy_registry = StrategyRegistry()
+   factor_registry = FactorRegistry()
+   ```
+
+3. **Trading Runner Setup**:
+   ```python
+   # Create and configure trading runner
+   runner = TradingRunner(
+       config=config,
+       strategy_registry=strategy_registry,
+       factor_registry=factor_registry,
+       data_provider=data_provider,
+       data_processor=data_processor
+   )
+   ```
+
+4. **Execution**:
+   ```python
+   # Run in specified mode
+   if mode == "live":
+       runner.run_live()
+   else:
+       results = runner.run_backtest()
+   ```
+
+### Live Trading Processtr
+
+1. **Data Fetching**: Continuously fetches market data at configured intervals
+2. **Processing**: Applies technical indicators and calculates factors
+3. **Signal Generation**: Strategies analyze data and generate trading signals
+4. **Trade Execution**: Executes trades based on signals and risk parameters
+5. **Portfolio Updates**: Tracks positions, P&L, and risk metrics
+
+### Configuration
+
+The system is configured through YAML files:
+
+```yaml
+data:
+  interval: "1m"  # Data update interval
+  universe_type: "custom"
+  custom_universe: ["AAPL", "GOOGL", "MSFT"]
+
+portfolio:
+  initial_capital: 100000
+  commission: 0.001
+
+risk:
+  max_position_size: 10000
+  stop_loss: 0.02
+  take_profit: 0.05
 ```
 
-This will start:
-- Redis on port 6379
-- TimescaleDB on port 5432
-- The StockRadar application
+## Adding Custom Components
 
-3. Verify the services are running:
-```bash
-docker compose ps
-```
-
-## Development Setup
-
-1. Create and activate a virtual environment:
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-2. Install development dependencies:
-```bash
-pip install -e ".[dev]"
-```
-
-3. Run the tests:
-```bash
-pytest
-```
-
-## Project Structure
-
-```
-stockradar/
-├── data_storage/          # Storage implementations
-│   ├── base.py           # Base storage class
-│   ├── local_storage.py  # Local file storage
-│   ├── redis_cache.py    # Redis cache storage
-│   ├── timescaledb_storage.py  # TimescaleDB storage
-│   └── version_control.py # Version control system
-├── tests/                # Test suite
-├── docker-compose.yml    # Docker services configuration
-├── Dockerfile           # Application container
-├── requirements.txt     # Python dependencies
-└── setup.py            # Package configuration
-```
-
-## Storage Backends
-
-### Local Storage
-- Uses Parquet format for efficient storage
-- Supports data versioning
-- Suitable for development and testing
-
-### Redis Cache
-- Fast in-memory storage
-- Supports data versioning
-- Ideal for frequently accessed data
-
-### TimescaleDB
-- Time-series optimized storage
-- Supports data versioning
-- Best for historical data analysis
-
-## Data Versioning
-
-The system supports data versioning through the `VersionControl` class:
+### Custom Strategy
 ```python
-from data_storage import VersionControl, LocalStorage
-
-# Initialize version control
-storage = LocalStorage()
-version_control = VersionControl(storage)
-
-# Create a new version
-version_id, success = version_control.create_version(
-    data,
-    'dataset_name',
-    {'description': 'Initial version'}
-)
-
-# Get a specific version
-data, metadata = version_control.get_version('dataset_name', version_id)
+class MyStrategy(StrategyBase):
+    def generate_signals(self, market_data, factor_data):
+        # Implement signal generation logic
+        pass
 ```
 
-## Testing
-
-Run the test suite:
-```bash
-# Run all tests
-pytest
-
-# Run specific test file
-pytest tests/test_data_storage.py
-
-# Run with coverage report
-pytest --cov=stockradar
+### Custom Factor
+```python
+class MyFactor(FactorBase):
+    def calculate(self, market_data):
+        # Implement factor calculation
+        pass
 ```
 
-## Docker Commands
+## Monitoring and Logging
 
-```bash
-# Start services
-docker compose up -d
+The system provides detailed logging of:
+- Trade execution
+- Portfolio updates
+- Factor calculations
+- System status
 
-# Stop services
-docker compose down
+Logs are written to both console and file for monitoring and debugging.
 
-# View logs
-docker compose logs -f
+## Dependencies
 
-# Rebuild containers
-docker compose up -d --build
-
-# Access Redis CLI
-docker compose exec redis redis-cli
-
-# Access TimescaleDB
-docker compose exec timescaledb psql -U postgres -d stockradar
-```
-
-## Environment Variables
-
-The following environment variables can be configured:
-
-- `REDIS_HOST`: Redis server host (default: localhost)
-- `REDIS_PORT`: Redis server port (default: 6379)
-- `POSTGRES_HOST`: TimescaleDB host (default: localhost)
-- `POSTGRES_PORT`: TimescaleDB port (default: 5432)
-- `POSTGRES_DB`: Database name (default: stockradar)
-- `POSTGRES_USER`: Database user (default: postgres)
-- `POSTGRES_PASSWORD`: Database password (default: postgres)
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+- pandas
+- numpy
+- yfinance
+- PyYAML
+- ta (Technical Analysis library)
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+MIT License 
