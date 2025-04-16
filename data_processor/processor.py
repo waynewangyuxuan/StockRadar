@@ -6,176 +6,117 @@ import logging
 from .base import DataProcessorBase
 
 class DataProcessor(DataProcessorBase):
-    """Concrete implementation of the data processor.
-    
-    This class handles core data processing tasks like:
-    - Data validation and cleaning
-    - Data normalization
-    - Data aggregation
-    - Basic market metrics calculation
-    """
+    """Data processor for market data."""
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the data processor.
         
         Args:
-            config: Dictionary containing processor-specific configuration
+            config: Optional configuration dictionary
         """
-        super().__init__(config)
-        self.logger = logging.getLogger(self.__class__.__name__)
-        
-    def process_data(self, 
-                    data: pd.DataFrame,
-                    factors: List[str],
-                    start_date: Optional[datetime] = None,
-                    end_date: Optional[datetime] = None) -> pd.DataFrame:
-        """Process market data.
+        super().__init__()
+        self.config = config or {}
+        self.logger = logging.getLogger(__name__)
+    
+    def get_required_metrics(self) -> List[str]:
+        """Get list of required metrics."""
+        return [
+            'returns',
+            'volatility',
+            'vwap',
+            'atr',
+            'volume_momentum',
+            'volume_volatility',
+            'relative_volume',
+            'momentum',
+            'acceleration'
+        ]
+    
+    def validate_factors(self, factors: List[str]) -> bool:
+        """Validate factor list."""
+        if not factors:
+            raise ValueError("Factor list cannot be empty")
+        if not all(isinstance(f, str) and f.strip() for f in factors):
+            raise ValueError("All factors must be non-empty strings")
+        return True
+    
+    def process_data(self, data: pd.DataFrame, factors: List[str], start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> pd.DataFrame:
+        """Process raw market data with comprehensive technical indicators.
         
         Args:
-            data: DataFrame with market data
-            factors: List of factor names to calculate
-            start_date: Optional start date for processing
-            end_date: Optional end date for processing
+            data: Raw market data DataFrame
+            factors: List of factors to calculate
+            start_date: Optional start date for filtering
+            end_date: Optional end date for filtering
             
         Returns:
-            DataFrame with processed data and basic market metrics
+            Processed DataFrame with technical indicators
         """
-        # Make a copy to avoid modifying input
-        data = data.copy()
-        
         # Validate inputs
         self.validate_data(data)
         self.validate_factors(factors)
         self.validate_dates(start_date, end_date)
         
-        # Filter data by date range if specified
-        if start_date is not None:
-            data = data[data['date'] >= start_date]
-        if end_date is not None:
-            data = data[data['date'] <= end_date]
+        # Filter by date if specified
+        if start_date or end_date:
+            mask = pd.Series(True, index=data.index)
+            if start_date:
+                mask &= data['date'] >= start_date
+            if end_date:
+                mask &= data['date'] <= end_date
+            data = data[mask].copy()
+        
+        # Make a copy to avoid modifying input
+        processed = data.copy()
+        
+        # Calculate for each ticker separately
+        for ticker in processed['ticker'].unique():
+            mask = processed['ticker'] == ticker
             
-        # Sort data
-        data = data.sort_values(['ticker', 'date'])
-        
-        # Handle missing values in required columns first
-        required_cols = ['open', 'high', 'low', 'close', 'volume']
-        data = self._handle_missing_values(data, required_cols)
-        
-        # Calculate basic metrics
-        data = self._calculate_basic_metrics(data)
-        
-        # Fill any remaining NaN values in calculated metrics
-        calculated_cols = [
-            'returns', 'log_returns', 'price_change', 'tr', 'atr',
-            'typical_price', 'money_flow', 'momentum', 'volume_momentum',
-            'acceleration', 'volatility', 'volume_volatility',
-            'price_range', 'price_range_pct', 'vwap', 'relative_volume'
-        ]
-        data = self._handle_missing_values(data, calculated_cols, fill_only=True)
-        
-        # Verify no missing values remain
-        missing_cols = data.columns[data.isnull().any()].tolist()
-        if missing_cols:
-            self.logger.warning(f"Found missing values in columns: {missing_cols}")
-            # Fill any remaining NaN values with 0 for calculated metrics
-            data[calculated_cols] = data[calculated_cols].fillna(0)
-        
-        return data
-        
-    def _handle_missing_values(self, 
-                             data: pd.DataFrame,
-                             columns: List[str],
-                             fill_only: bool = False) -> pd.DataFrame:
-        """Handle missing values in specified columns.
-        
-        Args:
-            data: DataFrame with market data
-            columns: List of columns to handle missing values for
-            fill_only: If True, only fill missing values without dropping rows
+            # Basic price metrics
+            processed.loc[mask, 'returns'] = processed.loc[mask, 'close'].pct_change(fill_method=None)
+            processed.loc[mask, 'log_returns'] = np.log1p(processed.loc[mask, 'returns'])
+            processed.loc[mask, 'price_change'] = processed.loc[mask, 'close'].diff()
             
-        Returns:
-            DataFrame with handled missing values
-        """
-        # Forward fill within each ticker group
-        for col in columns:
-            if col in data.columns:
-                data[col] = data.groupby('ticker')[col].ffill()
-                data[col] = data.groupby('ticker')[col].bfill()
-        
-        # Drop rows with missing values in specified columns if not in fill_only mode
-        if not fill_only:
-            data = data.dropna(subset=columns)
-        
-        return data
-        
-    def _calculate_basic_metrics(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Calculate basic market metrics that are commonly used.
-        
-        Args:
-            data: DataFrame with market data
-            
-        Returns:
-            DataFrame with additional market metrics
-        """
-        # Calculate metrics for each ticker separately
-        for ticker in data['ticker'].unique():
-            mask = data['ticker'] == ticker
-            
-            # Calculate returns and price changes
-            data.loc[mask, 'returns'] = data.loc[mask, 'close'].pct_change()
-            data.loc[mask, 'log_returns'] = np.log(data.loc[mask, 'close']).diff()
-            data.loc[mask, 'price_change'] = data.loc[mask, 'close'].diff()
-            
-            # Calculate true range
-            prev_close = data.loc[mask, 'close'].shift(1)
-            data.loc[mask, 'tr'] = pd.DataFrame({
-                'hl': data.loc[mask, 'high'] - data.loc[mask, 'low'],
-                'hc': abs(data.loc[mask, 'high'] - prev_close),
-                'lc': abs(data.loc[mask, 'low'] - prev_close)
+            # True Range and ATR
+            prev_close = processed.loc[mask, 'close'].shift(1)
+            processed.loc[mask, 'tr'] = pd.DataFrame({
+                'hl': processed.loc[mask, 'high'] - processed.loc[mask, 'low'],
+                'hc': abs(processed.loc[mask, 'high'] - prev_close),
+                'lc': abs(processed.loc[mask, 'low'] - prev_close)
             }).max(axis=1)
+            processed.loc[mask, 'atr'] = processed.loc[mask, 'tr'].rolling(window=14, min_periods=1).mean()
             
-            # Calculate ATR with minimum periods
-            data.loc[mask, 'atr'] = data.loc[mask, 'tr'].rolling(
-                window=14,
-                min_periods=1
-            ).mean()
+            # Volume metrics
+            processed.loc[mask, 'volume_momentum'] = processed.loc[mask, 'volume'].pct_change(periods=5, fill_method=None)
+            processed.loc[mask, 'volume_volatility'] = processed.loc[mask, 'volume'].rolling(window=20).std()
+            processed.loc[mask, 'relative_volume'] = processed.loc[mask, 'volume'] / processed.loc[mask, 'volume'].rolling(window=20).mean()
             
-            # Calculate typical price and money flow
-            data.loc[mask, 'typical_price'] = (
-                data.loc[mask, ['high', 'low', 'close']].mean(axis=1)
+            # Price momentum and volatility
+            processed.loc[mask, 'momentum'] = processed.loc[mask, 'close'].pct_change(periods=5, fill_method=None)
+            processed.loc[mask, 'acceleration'] = processed.loc[mask, 'momentum'].diff()
+            processed.loc[mask, 'volatility'] = processed.loc[mask, 'returns'].rolling(window=20).std()
+            
+            # VWAP and money flow
+            processed.loc[mask, 'typical_price'] = (
+                processed.loc[mask, ['high', 'low', 'close']].mean(axis=1)
+            ).clip(
+                lower=processed.loc[mask, 'low'],
+                upper=processed.loc[mask, 'high']
             )
-            data.loc[mask, 'money_flow'] = (
-                data.loc[mask, 'typical_price'] * data.loc[mask, 'volume']
-            )
-            
-            # Calculate momentum and acceleration
-            data.loc[mask, 'momentum'] = data.loc[mask, 'close'].diff(10)
-            data.loc[mask, 'volume_momentum'] = data.loc[mask, 'volume'].diff(10)
-            data.loc[mask, 'acceleration'] = data.loc[mask, 'momentum'].diff()
-            
-            # Calculate volatilities
-            data.loc[mask, 'volatility'] = data.loc[mask, 'returns'].rolling(
-                window=20,
-                min_periods=1
-            ).std()
-            data.loc[mask, 'volume_volatility'] = data.loc[mask, 'volume'].rolling(
-                window=20,
-                min_periods=1
-            ).std()
-            
-            # Calculate price ranges
-            data.loc[mask, 'price_range'] = data.loc[mask, 'high'] - data.loc[mask, 'low']
-            data.loc[mask, 'price_range_pct'] = data.loc[mask, 'price_range'] / data.loc[mask, 'close']
-            
-            # Calculate VWAP (daily)
-            data.loc[mask, 'vwap'] = (
-                data.loc[mask, 'money_flow'] / data.loc[mask, 'volume']
+            processed.loc[mask, 'money_flow'] = processed.loc[mask, 'typical_price'] * processed.loc[mask, 'volume']
+            processed.loc[mask, 'vwap'] = (
+                processed.loc[mask, 'money_flow'].cumsum() / processed.loc[mask, 'volume'].cumsum()
+            ).clip(
+                lower=processed.loc[mask, 'low'],
+                upper=processed.loc[mask, 'high']
             )
             
-            # Calculate relative volume
-            data.loc[mask, 'relative_volume'] = data.loc[mask, 'volume'] / data.loc[mask, 'volume'].rolling(
-                window=20,
-                min_periods=1
-            ).mean()
+            # Price ranges
+            processed.loc[mask, 'price_range'] = processed.loc[mask, 'high'] - processed.loc[mask, 'low']
+            processed.loc[mask, 'price_range_pct'] = processed.loc[mask, 'price_range'] / processed.loc[mask, 'close']
         
-        return data 
+        # Fill missing values
+        processed = processed.ffill().bfill().fillna(0)
+        
+        return processed 

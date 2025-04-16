@@ -12,7 +12,7 @@ from datetime import datetime
 from .models import EvaluationResult
 from .metrics import PerformanceMetrics
 from .visualization import BacktestVisualizer
-from strategy_engine.schema import StrategyInterface, DataSchema, SignalSchema
+from core.schema import StrategyInterface, DataSchema, SignalSchema
 
 class StrategyEvaluator:
     """

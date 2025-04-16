@@ -286,4 +286,87 @@ class ConfigLoader:
             logging=logging_config,
             cache=cache_config,
             monitoring=monitoring_config
-        ) 
+        )
+
+class ConfigManager:
+    """Manages configuration loading and validation for the StockRadar framework."""
+    
+    def __init__(self, config_path: str):
+        """Initialize the configuration manager.
+        
+        Args:
+            config_path: Path to the YAML configuration file
+        """
+        self.config_path = Path(config_path)
+        if not self.config_path.exists():
+            raise FileNotFoundError(f"Configuration file not found: {config_path}")
+    
+    def load_config(self) -> Dict[str, Any]:
+        """Load configuration from YAML file.
+        
+        Returns:
+            Dictionary containing the configuration
+            
+        Raises:
+            FileNotFoundError: If the configuration file doesn't exist
+            yaml.YAMLError: If the YAML file is invalid
+        """
+        with open(self.config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        
+        # Convert the new trading_config.yaml format to the format expected by TradingRunner
+        return self._convert_config(config)
+    
+    def _convert_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert the new trading_config.yaml format to the format expected by TradingRunner.
+        
+        Args:
+            config: Configuration dictionary in the new format
+            
+        Returns:
+            Configuration dictionary in the format expected by TradingRunner
+        """
+        # Create a new config dictionary
+        converted_config = {}
+        
+        # Copy general settings
+        if 'general' in config:
+            converted_config.update(config['general'])
+        
+        # Copy data settings
+        if 'data' in config:
+            converted_config['data'] = config['data']
+        
+        # Convert strategy settings to the expected format
+        if 'strategy' in config:
+            strategy_config = config['strategy']
+            converted_config['strategies'] = [{
+                'name': strategy_config['name'],
+                'enabled': True,
+                'params': strategy_config['parameters']
+            }]
+        
+        # Copy risk settings
+        if 'risk' in config:
+            converted_config['risk'] = config['risk']
+        
+        # Copy portfolio settings
+        if 'portfolio' in config:
+            converted_config['portfolio'] = config['portfolio']
+        
+        # Copy execution settings
+        if 'execution' in config:
+            converted_config['execution'] = config['execution']
+        
+        # Copy backtesting settings
+        if 'backtesting' in config:
+            converted_config['backtesting'] = config['backtesting']
+        
+        # Add logging settings if not present
+        if 'logging' not in converted_config:
+            converted_config['logging'] = {
+                'level': config.get('general', {}).get('log_level', 'INFO'),
+                'output_dir': config.get('general', {}).get('results_dir', 'results')
+            }
+        
+        return converted_config 

@@ -1,7 +1,7 @@
 import yfinance as yf
 import pandas as pd
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import time
 import logging
 from .base import DataProviderBase
@@ -22,13 +22,35 @@ class YahooFinanceProvider(DataProviderBase):
         self.retry_count = self.config.get('retry_count', 3)
         self.retry_delay = self.config.get('retry_delay', 1)
         self.timeout = self.config.get('timeout', 10)
+        self.logger = logging.getLogger(__name__)
         
     def fetch(self, 
               symbols: List[str],
               start_date: datetime,
               end_date: datetime,
               interval: str = "1d") -> pd.DataFrame:
-        """Fetch market data from Yahoo Finance.
+        """Fetch market data for the specified symbols and time range.
+        
+        This method is a wrapper around fetch_historical_data to satisfy
+        the DataProviderBase abstract class requirement.
+        
+        Args:
+            symbols: List of stock symbols to fetch
+            start_date: Start date for the data
+            end_date: End date for the data
+            interval: Data frequency (e.g., "1d", "1h", "1m")
+            
+        Returns:
+            DataFrame with market data
+        """
+        return self.fetch_historical_data(symbols, start_date, end_date, interval)
+        
+    def fetch_historical_data(self, 
+                            symbols: List[str],
+                            start_date: datetime,
+                            end_date: datetime,
+                            interval: str = "1d") -> pd.DataFrame:
+        """Fetch historical market data from Yahoo Finance.
         
         Args:
             symbols: List of stock symbols to fetch
@@ -44,7 +66,7 @@ class YahooFinanceProvider(DataProviderBase):
         self.validate_dates(start_date, end_date)
         self.validate_interval(interval)
         
-        self.logger.info(f"Fetching data for {len(symbols)} symbols from {start_date} to {end_date}")
+        self.logger.info(f"Fetching historical data for {len(symbols)} symbols from {start_date} to {end_date}")
         
         # Fetch data for each symbol with retries
         dfs = []
@@ -56,6 +78,62 @@ class YahooFinanceProvider(DataProviderBase):
                 
         if not dfs:
             raise ValueError("No data available for any of the requested symbols")
+            
+        # Combine all data
+        combined_df = pd.concat(dfs, ignore_index=True)
+        
+        # Standardize the DataFrame
+        return self._standardize_dataframe(combined_df)
+        
+    def fetch_live_data(self,
+                       symbols: List[str],
+                       interval: str = "1m") -> pd.DataFrame:
+        """Fetch latest market data from Yahoo Finance.
+        
+        Args:
+            symbols: List of stock symbols to fetch
+            interval: Data frequency (e.g., "1m", "2m", "5m", "15m", "30m", "60m", "90m")
+            
+        Returns:
+            DataFrame with latest market data
+        """
+        self.validate_symbols(symbols)
+        self.validate_interval(interval)
+        
+        # For live data, we fetch the last few intervals to ensure we have the latest data
+        # Yahoo Finance has different limitations for different intervals
+        interval_limits = {
+            "1m": 7,      # 7 days
+            "2m": 60,     # 60 days
+            "5m": 60,     # 60 days
+            "15m": 60,    # 60 days
+            "30m": 60,    # 60 days
+            "60m": 730,   # 730 days (2 years)
+            "90m": 60     # 60 days
+        }
+        
+        # Calculate start date based on interval
+        days_limit = interval_limits.get(interval, 7)
+        start_date = datetime.now() - timedelta(days=days_limit)
+        end_date = datetime.now()
+        
+        self.logger.info(f"Fetching live data for {len(symbols)} symbols")
+        
+        # Fetch recent data for each symbol
+        dfs = []
+        for symbol in symbols:
+            try:
+                df = self._fetch_symbol(symbol, start_date, end_date, interval)
+                if df is not None and not df.empty:
+                    # Get only the latest data point
+                    latest_data = df.iloc[[-1]].copy()  # Create a copy to avoid SettingWithCopyWarning
+                    latest_data.loc[:, 'ticker'] = symbol  # Use .loc to set values
+                    dfs.append(latest_data)
+            except Exception as e:
+                self.logger.warning(f"Failed to fetch live data for {symbol}: {str(e)}")
+                
+        if not dfs:
+            raise ValueError("No live data available for any of the requested symbols")
             
         # Combine all data
         combined_df = pd.concat(dfs, ignore_index=True)
@@ -94,17 +172,40 @@ class YahooFinanceProvider(DataProviderBase):
                     
                 # Reset index to make date a column
                 df = df.reset_index()
-                df.columns = df.columns.str.lower()
-                df = df.rename(columns={'date': 'date', 'stock splits': 'splits'})
                 
-                return df[['date', 'open', 'high', 'low', 'close', 'volume']]
+                # Handle column name changes in yfinance
+                df.columns = df.columns.str.lower()
+                
+                # Check if 'date' column exists, otherwise look for 'datetime' or 'time'
+                if 'date' not in df.columns:
+                    if 'datetime' in df.columns:
+                        df = df.rename(columns={'datetime': 'date'})
+                    elif 'time' in df.columns:
+                        df = df.rename(columns={'time': 'date'})
+                    else:
+                        # If no date-like column is found, use the index
+                        df = df.reset_index()
+                        df = df.rename(columns={'index': 'date'})
+                
+                # Handle other column name changes
+                if 'stock splits' in df.columns:
+                    df = df.rename(columns={'stock splits': 'splits'})
+                
+                # Ensure we have all required columns
+                required_cols = ['date', 'open', 'high', 'low', 'close', 'volume']
+                missing_cols = [col for col in required_cols if col not in df.columns]
+                if missing_cols:
+                    raise ValueError(f"Missing required columns: {missing_cols}")
+                
+                return df[required_cols]
                 
             except Exception as e:
                 self.logger.warning(f"Attempt {attempt + 1} failed for {symbol}: {str(e)}")
                 if attempt < self.retry_count:
                     time.sleep(self.retry_delay)
                 else:
-                    raise RuntimeError(f"Failed to fetch data for {symbol} after {self.retry_count} retries")
+                    self.logger.error(f"Failed to fetch data for {symbol} after {self.retry_count} retries")
+                    return None
                     
         return None
         
@@ -129,3 +230,25 @@ class YahooFinanceProvider(DataProviderBase):
             'currency': info.get('currency', 'USD'),
             'timezone': info.get('exchangeTimezoneName', 'America/New_York')
         }
+        
+    def get_sp500_symbols(self) -> List[str]:
+        """Get list of S&P 500 symbols.
+        
+        Returns:
+            List of S&P 500 stock symbols
+        """
+        # This is a placeholder. In a real implementation, you would:
+        # 1. Either maintain a local list that's updated periodically
+        # 2. Or fetch from a reliable source (e.g., Wikipedia API)
+        return ["AAPL", "MSFT", "GOOGL", "AMZN", "META"]  # Example symbols
+        
+    def get_nasdaq100_symbols(self) -> List[str]:
+        """Get list of NASDAQ 100 symbols.
+        
+        Returns:
+            List of NASDAQ 100 stock symbols
+        """
+        # This is a placeholder. In a real implementation, you would:
+        # 1. Either maintain a local list that's updated periodically
+        # 2. Or fetch from a reliable source
+        return ["AAPL", "MSFT", "GOOGL", "AMZN", "META"]  # Example symbols

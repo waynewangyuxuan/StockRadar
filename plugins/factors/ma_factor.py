@@ -2,104 +2,88 @@ from core.factor_base import FactorBase, FactorType, FactorMetadata
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, Optional, List, Tuple
+from datetime import datetime
+import logging
 
-class MovingAverageFactor(FactorBase):
-    """Moving Average factor implementation.
+class MAFactor(FactorBase):
+    """Moving Average Factor.
     
-    Calculates moving average of price data with:
-    1. Configurable window size
-    2. Efficient numpy operations
-    3. Memory-efficient calculations
-    4. Clear C++ translation path
-    
-    Performance optimizations:
-    1. Vectorized numpy operations
-    2. Efficient rolling window calculations
-    3. Minimal memory allocations
-    4. Batch processing support
+    This factor calculates simple and exponential moving averages for a specified column.
     """
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """Initialize the moving average factor.
+        """Initialize the Moving Average factor.
         
         Args:
-            config: Dictionary with optional parameters:
-                   - window: Rolling window size (default: 20)
-                   - price_col: Column to calculate MA on (default: 'close')
+            config: Dictionary containing factor-specific configuration:
+                   - column: Column to calculate moving averages for (default: 'close')
+                   - windows: List of window sizes for moving averages (default: [5, 20, 50])
+                   - ma_types: List of moving average types ('sma' or 'ema') (default: ['sma'])
         """
-        # Set attributes before calling super().__init__
-        self.window = int((config or {}).get('window', 20))
-        self.price_col = str((config or {}).get('price_col', 'close'))
+        # Set instance variables before calling super().__init__()
+        self.config = config or {}
+        self.column = self.config.get('column', 'close')
+        self.windows = self.config.get('windows', [5, 20, 50])
+        self.ma_types = self.config.get('ma_types', ['sma'])
         
-        # Validate config
-        self._validate_config()
-        
-        # Call parent initialization
-        super().__init__(config)
-        
-    def _validate_config(self):
-        """Validate factor configuration."""
-        if self.window < 1:
-            raise ValueError("Window size must be positive")
+        # Validate configuration
+        if not isinstance(self.windows, list) or not self.windows:
+            raise ValueError("Windows must be a non-empty list")
+        if not all(isinstance(w, int) and w > 0 for w in self.windows):
+            raise ValueError("All window sizes must be positive integers")
+        if not all(t in ['sma', 'ema'] for t in self.ma_types):
+            raise ValueError("Moving average types must be 'sma' or 'ema'")
             
+        # Initialize base class after setting instance variables
+        super().__init__(self.config)
+    
     def _get_metadata(self) -> FactorMetadata:
-        """Get factor metadata for optimization."""
+        """Get factor metadata for optimization and C++ translation.
+        
+        Returns:
+            FactorMetadata object with factor characteristics
+        """
+        output_columns = []
+        for window in self.windows:
+            for ma_type in self.ma_types:
+                output_columns.append(f"{ma_type}_{window}")
+                
         return FactorMetadata(
-            name=self.name,
+            name="ma_factor",
             type=FactorType.PRICE_BASED,
-            required_columns=['ticker', self.price_col],
-            output_columns=[f'ma_{self.window}'],
+            required_columns=[self.column],
+            output_columns=output_columns,
             is_vectorized=True,
             supports_batch=True,
             memory_efficient=True
         )
-    
+            
     def calculate(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Calculate moving average efficiently.
+        """Calculate moving averages.
         
         Args:
-            data: DataFrame with ticker and price columns
+            data: DataFrame with market data
             
         Returns:
-            DataFrame with moving average column added
+            DataFrame with moving average columns added
         """
+        # Validate input
         self.validate_input(data)
         
-        # Create a copy to avoid modifying input
+        # Make a copy to avoid modifying input
         result = data.copy()
         
-        # Calculate for each ticker
-        for ticker in result['ticker'].unique():
-            mask = result['ticker'] == ticker
-            ticker_data = result.loc[mask]
-            
-            # Calculate moving average using pandas rolling
-            # This handles NaN values correctly
-            ma = ticker_data[self.price_col].rolling(
-                window=self.window,
-                min_periods=self.window
-            ).mean()
-            
-            # Store results
-            result.loc[mask, f'ma_{self.window}'] = ma
-            
-        return result
-    
-    def calculate_batch(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Calculate moving average in batch for better performance.
-        
-        Args:
-            data: DataFrame with multiple tickers
-            
-        Returns:
-            DataFrame with moving average column added
-        """
-        # Create a copy to avoid modifying input
-        result = data.copy()
-        
-        # Calculate MA for all tickers at once
-        result[f'ma_{self.window}'] = result.groupby('ticker')[self.price_col].transform(
-            lambda x: x.rolling(window=self.window, min_periods=self.window).mean()
-        )
+        # Calculate moving averages for each window and type
+        for window in self.windows:
+            for ma_type in self.ma_types:
+                col_name = f"{ma_type}_{window}"
+                if ma_type == 'sma':
+                    result[col_name] = result.groupby('ticker')[self.column].transform(
+                        lambda x: x.rolling(window=window, min_periods=1).mean()
+                    )
+                else:  # ema
+                    result[col_name] = result.groupby('ticker')[self.column].transform(
+                        lambda x: x.ewm(span=window, min_periods=1).mean()
+                    )
         
         return result

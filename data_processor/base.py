@@ -79,9 +79,12 @@ class DataProcessorBase(ABC):
             
         Returns:
             True if valid, raises ValueError if invalid
+            
+        Raises:
+            ValueError: If factors list is empty or contains invalid factors
         """
         if not factors:
-            raise ValueError("Factors list cannot be empty")
+            raise ValueError("Factor list cannot be empty")
             
         if not all(isinstance(f, str) and f.strip() for f in factors):
             raise ValueError("All factors must be non-empty strings")
