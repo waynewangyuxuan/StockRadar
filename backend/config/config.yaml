@@ -1,0 +1,79 @@
+# StockRadar Configuration
+# This file defines all components and their parameters for the strategy pipeline
+
+# Data source configuration
+data_source:
+  provider: "yfinance_provider"  # One of: yfinance_provider, simulator_provider, hive_provider
+  params:
+    symbols:  # List of stock symbols to fetch
+      - "AAPL"
+      - "MSFT"
+      - "GOOGL"
+      - "AMZN"
+      - "META"
+    start_date: "2023-01-01"
+    end_date: "2024-03-01"
+    interval: "1d"  # Data frequency: 1d, 1h, etc.
+
+# Factor configurations
+factors:
+  - class: "plugins.factors.ma_factor.MAFactor"
+    params:
+      short_window: 20
+      long_window: 50
+      column: "close"
+  
+  - class: "plugins.factors.volume_spike_factor.VolumeSpikeFactor"
+    params:
+      window: 20
+      threshold: 2.0  # Volume spike threshold in standard deviations
+
+# Strategy configurations
+strategies:
+  - class: "plugins.strategies.golden_cross.GoldenCrossStrategy"
+    params:
+      ma_short: "ma_20"  # Column name from MAFactor
+      ma_long: "ma_50"   # Column name from MAFactor
+      min_signal_strength: 0.7
+  
+  - class: "plugins.strategies.mean_reversion.MeanReversionStrategy"
+    params:
+      lookback_period: 20
+      entry_threshold: 2.0  # Standard deviations from mean
+      exit_threshold: 1.0
+      volume_factor: "volume_spike"  # Column name from VolumeSpikeFactor
+
+# Output configuration
+output:
+  path: "output/weekly_signals.csv"
+  format: "csv"
+  include_metadata: true  # Whether to include strategy/factor metadata in output
+
+# Logging configuration
+logging:
+  level: "INFO"
+  file: "logs/stockradar.log"
+  max_size: 10485760  # 10MB
+  backup_count: 5
+
+# Cache configuration (optional)
+cache:
+  enabled: true
+  provider: "redis"  # One of: redis, local
+  params:
+    host: "localhost"
+    port: 6379
+    db: 0
+    ttl: 3600  # Cache time-to-live in seconds
+
+# Performance monitoring (optional)
+monitoring:
+  enabled: true
+  metrics:
+    - "execution_time"
+    - "memory_usage"
+    - "cpu_usage"
+  alert_thresholds:
+    execution_time: 300  # seconds
+    memory_usage: 1024  # MB
+    cpu_usage: 80  # percentage
