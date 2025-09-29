@@ -1,0 +1,1 @@
+{"source": "live_trading", "timestamp": "2025-04-21T18:32:56.548862", "config": {"interval": "1m", "symbols": ["AAPL", "MSFT", "GOOGL"]}, "created_at": "2025-04-21T18:32:56.549242", "num_records": 3, "tickers": ["AAPL", "GOOGL", "MSFT"], "date_range": ["2025-04-21T15:59:00-04:00", "2025-04-21T15:59:00-04:00"]}

@@ -1,0 +1,1 @@
+{"source": "processed_data", "run_id": "20250421_183219", "timestamp": "2025-04-21T18:32:20.279225", "applied_factors": ["MAFactor", "VolumeSpikeFactor"], "created_at": "2025-04-21T18:32:20.279618", "num_records": 750, "tickers": ["AAPL", "GOOGL", "MSFT"], "date_range": ["2023-01-03T00:00:00-05:00", "2023-12-29T00:00:00-05:00"]}
