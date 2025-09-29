@@ -2,10 +2,37 @@
 
 StockRadar is a flexible, modular trading system that supports both backtesting and live trading with customizable strategies and factors.
 
-## Todo
-1. Streamline the process to connect with the the storage system.
-2. Test more about the pipeline.
-3. Frontend Implementation.
+## Features
+
+- **Multiple Trading Strategies**: Mean reversion, moving average crossover, momentum breakout, and golden cross
+- **Flexible Data Sources**: Yahoo Finance integration with extensible provider framework
+- **Storage Options**: Local filesystem, Redis cache, and TimescaleDB support
+- **REST API**: Comprehensive API for strategy management, trading control, and data access
+- **Backtesting Engine**: Complete performance metrics and visualization
+- **Paper Trading Ready**: Framework prepared for live paper trading integration
+
+## Installation
+
+### Prerequisites
+- Python 3.8+
+- pip
+- Docker (optional, for advanced storage backends)
+
+### Setup
+```bash
+# Clone the repository
+git clone <your-repo-url>
+cd StockRadar
+
+# Install dependencies
+pip install -r backend/requirements.txt
+
+# Create necessary directories
+mkdir -p data config
+
+# Copy sample configuration
+cp backend/config/trading_config.yaml config/
+```
 
 ## Quick Start
 
@@ -31,11 +58,11 @@ StockRadar is a flexible, modular trading system that supports both backtesting 
 # Run in API mode (default)
 python main.py
 
-# Run in CLI mode with live trading
-python main.py --mode cli --config config/trading_config.yaml --trading-mode live
-
 # Run in CLI mode with backtesting
-python main.py --mode cli --config config/backtest_config.yaml --trading-mode backtest
+python main.py --mode cli --config backend/config/trading_config.yaml --trading-mode backtest
+
+# Run in CLI mode with live trading (paper trading)
+python main.py --mode cli --config backend/config/trading_config.yaml --trading-mode live
 ```
 
 ## API Endpoints
@@ -71,16 +98,35 @@ Here are some examples of how to interact with the API using curl:
 # List all available strategies
 curl http://localhost:5000/api/strategies
 
-# Get market data for specific symbols
-curl http://localhost:5000/api/data/market?symbols=AAPL,MSFT
+# Get details about a specific strategy
+curl http://localhost:5000/api/strategies/mean_reversion
 
-# Start backtesting with the provided configuration
+# Enable a strategy for trading
+curl -X POST http://localhost:5000/api/strategies/mean_reversion/enable \
+  -H "Content-Type: application/json" \
+  -d '{"parameters": {"lookback_period": 20, "entry_threshold": 2.0}}'
+
+# Get market data for specific symbols
+curl "http://localhost:5000/api/data/market?symbols=AAPL,MSFT&start_date=2023-01-01&end_date=2023-12-31"
+
+# Start backtesting with configuration
 curl -X POST http://localhost:5000/api/trading/start \
   -H "Content-Type: application/json" \
-  -d '{"mode": "backtest", "config_path": "backend/config/api_config.yaml"}'
+  -d '{
+    "mode": "backtest",
+    "config": {
+      "general": {"mode": "backtest"},
+      "data": {"symbols": ["AAPL", "MSFT"], "start_date": "2023-01-01", "end_date": "2023-12-31"},
+      "portfolio": {"initial_capital": 100000},
+      "strategies": [{"name": "mean_reversion", "enabled": true}]
+    }
+  }'
 
 # Get the current trading status
 curl http://localhost:5000/api/trading/status
+
+# Stop trading session
+curl -X POST http://localhost:5000/api/trading/stop
 ```
 
 ## System Architecture
@@ -204,14 +250,50 @@ The system provides detailed logging of:
 
 Logs are written to both console and file for monitoring and debugging.
 
+## Available Strategies
+
+- **Mean Reversion**: Trades based on price deviations from moving averages
+- **Moving Average Crossover**: Signals based on short/long MA crossovers
+- **Momentum Breakout**: Detects breakouts above resistance levels
+- **Golden Cross**: Long-term trend following using 50/200 day MA cross
+
 ## Dependencies
 
-- pandas
-- numpy
-- yfinance
-- PyYAML
-- ta (Technical Analysis library)
-- Flask (for API mode)
+See `backend/requirements.txt` for complete list. Key dependencies:
+- **Data Processing**: pandas, numpy, yfinance, ta
+- **Web API**: Flask, flask-cors
+- **Storage**: redis, psycopg2-binary, pyarrow
+- **Visualization**: matplotlib, seaborn
+- **Testing**: pytest, pytest-cov
+
+## Project Structure
+
+```
+StockRadar/
+├── backend/                    # Core backend code
+│   ├── api.py                 # REST API endpoints
+│   ├── app.py                 # Application launcher
+│   ├── run.py                 # CLI trading runner
+│   ├── core/                  # Core framework
+│   ├── strategy_engine/       # Strategy management
+│   ├── data_fetcher/          # Data providers
+│   ├── data_processor/        # Data processing
+│   ├── data_storage/          # Storage backends
+│   ├── backtester/           # Backtesting engine
+│   ├── plugins/              # Strategy & factor plugins
+│   └── config/               # Configuration files
+├── main.py                   # Main entry point
+├── start_api.sh             # Startup script
+└── config/                  # User configuration
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Add tests for new functionality
+4. Ensure all tests pass: `cd backend && ./run_tests.sh`
+5. Submit a pull request
 
 ## License
 

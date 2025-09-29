@@ -105,11 +105,19 @@ class StrategyRegistry:
         
     def list_strategies(self) -> list[str]:
         """Get list of registered strategy names.
-        
+
         Returns:
             List of strategy names
         """
         return list(self._strategies.keys())
+
+    def get_all(self) -> Dict[str, Type[StrategyInterface]]:
+        """Get all registered strategies.
+
+        Returns:
+            Dictionary of strategy name to strategy class mappings
+        """
+        return self._strategies.copy()
         
     def clear(self) -> None:
         """Clear all registered strategies."""

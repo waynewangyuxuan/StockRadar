@@ -554,20 +554,39 @@ def update_config():
 def get_market_data():
     """Get market data for specified symbols."""
     try:
+        from datetime import datetime, timedelta
+
         # Get parameters from request
         symbols = request.args.get('symbols', '').split(',')
-        start_date = request.args.get('start_date')
-        end_date = request.args.get('end_date')
-        
+        start_date_str = request.args.get('start_date')
+        end_date_str = request.args.get('end_date')
+
         if not symbols or symbols[0] == '':
             return jsonify({'error': 'No symbols provided'}), 400
-            
+
+        # Parse dates or use defaults
+        if start_date_str:
+            try:
+                start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+            except ValueError:
+                return jsonify({'error': 'Invalid start_date format. Use YYYY-MM-DD'}), 400
+        else:
+            start_date = datetime.now() - timedelta(days=365)  # Default to 1 year ago
+
+        if end_date_str:
+            try:
+                end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+            except ValueError:
+                return jsonify({'error': 'Invalid end_date format. Use YYYY-MM-DD'}), 400
+        else:
+            end_date = datetime.now()  # Default to now
+
         # Create data provider
         with trading_state['lock']:
             config = trading_state['config'] or {}
-            
+
         data_provider = YahooFinanceProvider(config.get('data', {}))
-        
+
         # Fetch data
         data = data_provider.fetch_historical_data(
             symbols=symbols,

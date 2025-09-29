@@ -61,6 +61,14 @@ class FactorRegistry:
             self.logger.error(f"Failed to create factor {name}: {str(e)}")
             return None
             
+    def get_all(self) -> Dict[str, Type]:
+        """Get all registered factors.
+
+        Returns:
+            Dictionary of factor name to factor class mappings
+        """
+        return self._factors.copy()
+
     def clear(self) -> None:
         """Clear all registered factors."""
         self._factors.clear()
