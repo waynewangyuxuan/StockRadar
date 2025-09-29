@@ -5,21 +5,89 @@ StockRadar is a flexible, modular trading system that supports both backtesting 
 ## Todo
 1. Streamline the process to connect with the the storage system.
 2. Test more about the pipeline.
-2. Frontened Implementation.
+3. Frontend Implementation.
 
 ## Quick Start
 
-```bash
-# Run live trading
-python run.py --mode live --config config/trading_config.yaml
+### Using the Startup Script
 
-# Run backtesting
-python run.py --mode backtest --config config/backtest_config.yaml
+```bash
+# Start the API server with default settings (port 5000)
+./start_api.sh
+
+# Start with a specific port
+./start_api.sh --port=8080
+
+# Start in CLI mode for backtesting
+./start_api.sh --mode=cli --config=backend/config/api_config.yaml --trading-mode=backtest
+
+# Start in CLI mode for live trading
+./start_api.sh --mode=cli --config=backend/config/api_config.yaml --trading-mode=live
+```
+
+### Manual Startup
+
+```bash
+# Run in API mode (default)
+python main.py
+
+# Run in CLI mode with live trading
+python main.py --mode cli --config config/trading_config.yaml --trading-mode live
+
+# Run in CLI mode with backtesting
+python main.py --mode cli --config config/backtest_config.yaml --trading-mode backtest
+```
+
+## API Endpoints
+
+StockRadar provides a RESTful API for interacting with the trading system. The API runs on port 5000 by default.
+
+### Strategy Management
+- `GET /api/strategies` - List all available strategies
+- `GET /api/strategies/{id}` - Get details about a specific strategy
+- `POST /api/strategies/{id}/enable` - Enable a strategy for trading
+- `POST /api/strategies/{id}/disable` - Disable a strategy
+
+### Trading Control
+- `POST /api/trading/start` - Start trading with specified mode and configuration
+- `POST /api/trading/stop` - Stop the current trading session
+- `GET /api/trading/status` - Get the current status of the trading system
+
+### Configuration Management
+- `GET /api/config` - Get the current configuration
+- `PUT /api/config` - Update the configuration
+
+### Data Management
+- `GET /api/data/market?symbols=AAPL,MSFT&start_date=2023-01-01&end_date=2023-12-31` - Get market data for specified symbols
+
+### Portfolio Management
+- `GET /api/portfolio` - Get the current portfolio status
+
+## Example API Usage
+
+Here are some examples of how to interact with the API using curl:
+
+```bash
+# List all available strategies
+curl http://localhost:5000/api/strategies
+
+# Get market data for specific symbols
+curl http://localhost:5000/api/data/market?symbols=AAPL,MSFT
+
+# Start backtesting with the provided configuration
+curl -X POST http://localhost:5000/api/trading/start \
+  -H "Content-Type: application/json" \
+  -d '{"mode": "backtest", "config_path": "backend/config/api_config.yaml"}'
+
+# Get the current trading status
+curl http://localhost:5000/api/trading/status
 ```
 
 ## System Architecture
 
-The system is orchestrated through `run.py`, which serves as the main entry point. Here's how it works:
+The system is organized into two main components:
+1. **Backend** - Core trading and data processing logic
+2. **API** - RESTful interface for interacting with the system
 
 ### Core Components
 
@@ -80,7 +148,7 @@ The `run.py` script follows this sequence:
        results = runner.run_backtest()
    ```
 
-### Live Trading Processtr
+### Live Trading Process
 
 1. **Data Fetching**: Continuously fetches market data at configured intervals
 2. **Processing**: Applies technical indicators and calculates factors
@@ -143,6 +211,7 @@ Logs are written to both console and file for monitoring and debugging.
 - yfinance
 - PyYAML
 - ta (Technical Analysis library)
+- Flask (for API mode)
 
 ## License
 

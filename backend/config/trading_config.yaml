@@ -2,7 +2,7 @@
 
 # General Settings
 general:
-  mode: backtest  # Changed from backtest to live
+  mode: live #Changed from backtest to live
   log_level: INFO
   data_dir: data
   results_dir: results

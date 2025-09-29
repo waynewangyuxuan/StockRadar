@@ -1,0 +1,49 @@
+# Storage configuration for StockRadar
+# This file defines how and where data is stored
+
+# Default storage backend to use when none is specified
+default_backend: local
+
+# Configuration for available storage backends
+backends:
+  # Local filesystem storage
+  local:
+    # Base directory for local storage (relative to project root)
+    base_path: data/storage
+    
+  # Amazon S3 storage (optional)
+  # Uncomment and configure to enable
+  # s3:
+  #   bucket_name: stockradar-data
+  #   region_name: us-east-1
+  #   prefix: prod
+  #   # AWS credentials can be provided here or via environment variables
+  #   # aws_access_key_id: YOUR_ACCESS_KEY
+  #   # aws_secret_access_key: YOUR_SECRET_KEY
+  
+  # Google Cloud Storage (optional)
+  # Uncomment and configure to enable
+  # gcs:
+  #   bucket_name: stockradar-data
+  #   prefix: prod
+  #   # GCP credentials should be provided via environment variable or default credentials
+
+# Settings for specific data types
+data_types:
+  market_data:
+    # Default retention period (in days, 0 for unlimited)
+    retention_days: 90
+    # Default format for saving data
+    format: parquet
+    # Compression level (if applicable)
+    compression: snappy
+    
+  backtest_results:
+    retention_days: 365
+    format: parquet
+    compression: snappy
+    
+  models:
+    retention_days: 180
+    format: parquet
+    compression: snappy 

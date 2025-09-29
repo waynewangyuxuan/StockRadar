@@ -1,0 +1,1 @@
+{"source": "backtest_processed", "run_id": "20250421_192442", "timestamp": "2025-04-21T19:24:42.889361", "applied_factors": ["MAFactor", "VolumeSpikeFactor"], "created_at": "2025-04-21T19:24:42.889369", "num_records": 750}
