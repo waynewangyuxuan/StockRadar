@@ -1,0 +1,78 @@
+general:
+  mode: "live"
+  paper_trading: true
+  name: "StockRadar API Demo"
+
+data:
+  provider: "yahoo"
+  interval: "1m"  # 1-minute data (options: 1m, 5m, 15m, 1h, 1d)
+  universe_type: "custom"
+  custom_universe: ["AAPL", "MSFT", "GOOGL", "AMZN", "META"]  # Default stocks to track
+  start_date: "2023-01-01"
+  end_date: "2023-12-31"
+
+portfolio:
+  initial_capital: 100000
+  commission: 0.001  # 0.1% commission
+  slippage: 0.0005   # 0.05% slippage
+
+risk:
+  max_position_size: 10000
+  max_drawdown: 0.10  # 10% max drawdown
+  stop_loss: 0.02     # 2% stop loss
+  take_profit: 0.05   # 5% take profit
+  max_positions: 5    # Maximum number of positions
+
+strategies:
+  - name: "mean_reversion"
+    enabled: true
+    parameters:
+      window: 20
+      std_threshold: 2.0
+      min_deviation: 0.01
+
+  - name: "ma_crossover"
+    enabled: false
+    parameters:
+      fast_period: 9
+      slow_period: 21
+
+factors:
+  ma_factor:
+    enabled: true
+    window: 20
+    ma_type: "sma"
+    column: "close"
+
+  volume_spike_factor:
+    enabled: true
+    threshold: 2.0
+    lookback_period: 20
+
+logging:
+  level: "INFO"
+  output_dir: "logs"
+  file_output: true
+
+api:
+  host: "0.0.0.0"
+  port: 5000
+  debug: true
+  enable_cors: true
+
+storage:
+  local:
+    enabled: true
+    base_dir: "data/storage"
+  
+  redis:
+    enabled: false
+    host: "localhost"
+    port: 6379
+    db: 0
+    
+  timescaledb:
+    enabled: false
+    connection_string: "postgresql://postgres:postgres@localhost:5432/stockradar"
+    
+  primary_backend: "local"  # Options: local, redis, timescaledb 
