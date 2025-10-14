@@ -1,0 +1,1 @@
+{"source": "live_raw", "timestamp": "2025-04-23T08:30:23.984339", "config": {"interval": "1m", "symbols": ["AAPL", "MSFT", "GOOGL"]}, "created_at": "2025-04-23T08:30:23.984976", "num_records": 3, "date_range": ["2025-04-22T15:59:00-04:00", "2025-04-22T15:59:00-04:00"]}

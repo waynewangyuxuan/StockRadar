@@ -1,0 +1,1 @@
+{"source": "test", "type": "multiindex", "timestamp": "2025-04-21T18:22:58.733993", "created_at": "2025-04-21T18:22:58.734582", "num_records": 15, "tickers": ["AAPL", "GOOGL", "MSFT"], "date_range": ["2023-01-01T00:00:00", "2023-01-05T00:00:00"]}

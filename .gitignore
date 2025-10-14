@@ -29,9 +29,50 @@ htmlcov/
 
 # Logs
 *.log
+logs/
+output/*.log
+backend/output/*.log
+
+# Data files and results
+data/
+results/
+backtest_results/
+live_trading_results/
+backup/
+*backup*/
+*.csv
+*.parquet
+*.pkl
+*.pickle
+
+# Configuration (keep templates)
+config/*.yaml
+!config/template.yaml
+!config/storage_config.yaml
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+.tmp/
 
 # Local development settings
 .env
 .env.local
+
+# API keys and secrets
+*secret*
+*key*
+!*_template*
 
 act.sh
